@@ -1,0 +1,86 @@
+# voiceinput 配置文件
+# 修改后需重启程序生效。
+#
+# 引擎说明：
+#   sensevoice  - 阿里 SenseVoice-Small（推荐）：中英日韩粤，中文精度高、延迟低
+#   paraformer  - 阿里 Paraformer-zh：中文高精度
+#   whisper     - faster-whisper（需额外安装 faster-whisper）：多语种
+engine: sensevoice
+
+# 模型存放目录（相对项目根目录或绝对路径）
+model_dir: models
+
+# CPU 推理线程数
+threads: 4
+
+sensevoice:
+  # 语言：auto / zh / en / ja / ko / yue
+  language: auto
+  # 逆文本正则化：把「一二三」转成「123」等
+  use_itn: true
+
+# 仅当 engine: whisper 时使用
+whisper:
+  model: large-v3          # tiny/base/small/medium/large-v3 等
+  device: cpu
+  compute_type: int8
+  language: zh
+
+hotkey:
+  # 按住说话、松开转写的按键。
+  # 可填：f9、f10、scroll lock、pause、right ctrl、right shift、caps lock 等
+  key: f9
+  # hold：按住说话、松开结束（默认）；toggle：按一下开始、再按一下结束
+  mode: hold
+  # 撤销上屏的快捷键（把上一次粘贴的内容删掉）；留空则禁用
+  undo: ctrl+alt+z
+  # 连续听写键：按一下开始持续录音（字幕持续显示），再按一下停止并上屏；留空则禁用
+  continuous: f10
+
+audio:
+  # 麦克风设备序号或名称；null 表示系统默认输入设备
+  device: null
+  # 短于该秒数的录音忽略（防误触）
+  min_duration: 0.3
+  # 最长录音秒数（连续听写的安全上限），到点自动结束并转写
+  max_duration: 300.0
+  # 自动裁剪首尾静音
+  trim_silence: true
+
+output:
+  # paste：剪贴板粘贴（推荐，兼容中文/输入法）；type：模拟按键（仅 ASCII）
+  method: paste
+  # 粘贴后还原原剪贴板内容
+  restore_clipboard: true
+  # 上屏后追加一个空格
+  append_space: true
+  append_newline: false
+
+feedback:
+  # 录音/结束提示音
+  beep: true
+  # 系统托盘图标（灰=待机 红=录音 黄=转写）
+  tray: true
+
+caption:
+  # 悬浮字幕窗：show 显示两行字幕 | dot 仅录音指示点 | off 关闭
+  mode: show
+  # 录音中重新解码的间隔（秒），越小字幕越跟手、CPU 越高
+  interval: 0.5
+  # 参与实时字幕的音频窗口上限（秒）
+  window: 25.0
+  # 字幕字号（第二行；第一行比它小 3）；也可在托盘「字幕大小」里改
+  font_size: 15
+
+history:
+  # 保存转录历史（history.jsonl），可在设置界面「历史」页查看/复制
+  enabled: true
+  max: 500
+
+replacements:
+  # 转写后自动替换的错词/术语；留空 {} 表示不替换
+  # 示例：{ "未来": "蔚来", "java script": "JavaScript" }
+  {}
+
+logging:
+  level: INFO

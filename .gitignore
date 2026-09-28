@@ -1,0 +1,12 @@
+.venv/
+models/
+__pycache__/
+*.pyc
+*.log
+build/
+dist/
+*.spec
+history.jsonl
+hud.state
+hud.pos
+hud.tmp
