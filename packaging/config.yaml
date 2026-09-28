@@ -1,0 +1,33 @@
+# voiceinput 便携版配置（此文件与 voiceinput.exe 同目录）
+engine: sensevoice
+model_dir: models
+hotkey:
+  key: f9
+  mode: hold
+  undo: ctrl+alt+z
+  continuous: f10
+audio:
+  device: null
+  min_duration: 0.3
+  max_duration: 300.0
+  trim_silence: true
+output:
+  method: paste
+  restore_clipboard: true
+  append_space: true
+  append_newline: false
+feedback:
+  beep: true
+  tray: true
+caption:
+  mode: show
+  interval: 0.5
+  window: 25.0
+  font_size: 15
+history:
+  enabled: true
+  max: 500
+replacements: {}
+logging:
+  level: INFO
+  file: voiceinput.log
