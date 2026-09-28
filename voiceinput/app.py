@@ -339,7 +339,19 @@ class VoiceInputApp:
             "font_size": self._caption_font_size,
             "line1": self._caption_lines[0],
             "line2": self._caption_lines[1],
+            "hint": self._caption_hint(),
         }
+
+    def _caption_hint(self) -> str:
+        """给字幕窗的「怎么停止」提示。"""
+        if self._status != "recording":
+            return ""
+        if self._recording_owner == "continuous" and self._continuous_key:
+            return f"按 {self._continuous_key.upper()} 停止 · Esc 取消"
+        key = self._ptt.key.upper()
+        if self._ptt.mode == "toggle":
+            return f"按 {key} 停止 · Esc 取消"
+        return f"松开 {key} 结束 · Esc 取消"
 
     def _write_state(self) -> None:
         hud.write_state(self._state())

@@ -1,11 +1,12 @@
-"""悬浮字幕窗。
+"""悬浮字幕窗（半透明圆角浮层）。
 
 独立小进程（tkinter 需独占主线程），读取状态文件 ``hud.state`` 渲染：
-- 一个状态圆点（红=录音、黄=转写）
-- 两行字幕：第一行=已经说过的话，第二行=正在说的话
+- 顶部：状态圆点（红=录音、黄=转写）+ 说明
+- 中部：两行字幕（第一行=已经说过、第二行=正在说）
+- 底部：提示当前按什么键可以停止/取消
 
-状态文件由主程序**原子写入**（先写临时文件再替换）；主程序每几秒刷新一次心跳，
-一旦主程序退出（文件超 15 秒未更新）本窗自动关闭。窗口可拖动，位置记在 ``hud.pos``。
+状态文件由主程序**原子写入**；主程序每几秒刷新心跳，文件超 15 秒未更新则本窗自动关闭。
+窗口可拖动，位置记在 ``hud.pos``。
 """
 
 from __future__ import annotations
@@ -22,16 +23,21 @@ STATE_FILE = PROJECT_ROOT / "hud.state"
 POS_FILE = PROJECT_ROOT / "hud.pos"
 _STALE_SECONDS = 15.0
 
-_BG = "#1b1b1f"
+_MAGIC = "#0b0c0d"  # 作为窗口透明键色，使圆角外区域完全透明
+_PANEL = "#16171a"
+_BORDER = "#33343a"
 _FG_PREV = "#9aa0a6"
 _FG_CUR = "#ffffff"
+_STATUS = "#8b8b93"
+_HINT = "#77777f"
 _DOT = "#e53935"
-_WIDTH = 560
 
-_STATUS_COLOR = {"recording": "#e53935", "processing": "#f9a825", "error": "#c2185b"}
+_DOT_COLOR = {"recording": "#ff5a4d", "processing": "#f9b23c", "error": "#c2185b"}
 _STATUS_TEXT = {"recording": "录音中", "processing": "转写中", "error": "出错了"}
 
-_DOT_SIZE = (168, 38)
+_WIDTH = 660
+_PAD = 18
+_DOT_SIZE = (180, 40)
 
 
 def write_state(obj: dict) -> None:
@@ -52,7 +58,6 @@ def clear_state() -> None:
 
 
 def _read_state() -> tuple[dict | None, float]:
-    """返回 (状态?, mtime)。文件不存在→(None,0)；内容瞬时不可用→(None,mtime)。"""
     try:
         mtime = STATE_FILE.stat().st_mtime
     except Exception:
@@ -91,52 +96,88 @@ def main() -> int:
     root = tk.Tk()
     root.overrideredirect(True)
     root.attributes("-topmost", True)
+    root.configure(bg=_MAGIC)
     try:
-        root.attributes("-alpha", 0.94)
+        root.attributes("-transparentcolor", _MAGIC)
     except Exception:
         pass
-    root.configure(bg=_BG)
+    try:
+        root.attributes("-alpha", 0.86)
+    except Exception:
+        pass
 
-    outer = tk.Frame(root, bg=_BG, highlightthickness=1, highlightbackground="#34343a")
-    outer.pack(fill="both", expand=True)
+    canvas = tk.Canvas(root, bg=_MAGIC, highlightthickness=0, bd=0)
+    canvas.pack(fill="both", expand=True)
 
-    head = tk.Frame(outer, bg=_BG)
-    head.pack(fill="x", padx=14, pady=(8, 0))
-    dot = tk.Label(head, text="●", fg=_DOT, bg=_BG, font=("Segoe UI", 11))
-    dot.pack(side="left")
-    status_lbl = tk.Label(head, text="", fg=_FG_PREV, bg=_BG, font=("Microsoft YaHei", 9))
-    status_lbl.pack(side="left", padx=(6, 0))
-
-    body = tk.Frame(outer, bg=_BG)
-    body.pack(fill="x", padx=14, pady=(2, 10))
-    line1 = tk.Label(body, text="", fg=_FG_PREV, bg=_BG, anchor="w")
-    line1.pack(fill="x")
-    line2 = tk.Label(body, text="", fg=_FG_CUR, bg=_BG, anchor="w")
-    line2.pack(fill="x")
-
+    items: dict[str, int] = {}
     pos = {"xy": _load_pos()}
-    shown = {"visible": False, "layout": None, "font": None, "lim1": 40, "lim2": 34}
+    ui = {"visible": False, "layout": None, "font": None, "lim1": 40, "lim2": 34}
     drag = {"dx": 0, "dy": 0, "active": False}
 
-    def geometry_for(size: tuple[int, int]) -> None:
-        w, h = size
+    def round_rect(x1, y1, x2, y2, r, **kw):
+        pts = [
+            x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r,
+            x2, y2 - r, x2, y2, x2 - r, y2, x1 + r, y2,
+            x1, y2, x1, y2 - r, x1, y1 + r, x1, y1,
+        ]
+        return canvas.create_polygon(pts, smooth=True, **kw)
+
+    def geometry_for(w, h):
         if pos["xy"] and not drag["active"]:
             x, y = pos["xy"]
         else:
-            sw = root.winfo_screenwidth()
-            sh = root.winfo_screenheight()
+            sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
             x = (sw - w) // 2
             y = sh - h - 96
-            if pos["xy"]:  # 用户拖动过后，尺寸变化时保持其水平位置
+            if pos["xy"]:
                 x = pos["xy"][0]
-        root.geometry(f"{w}x{h}+{int(x)}+{int(y)}")
+        root.geometry(f"{int(w)}x{int(h)}+{int(x)}+{int(y)}")
 
-    def on_press(event) -> None:
+    def build_show(size: int):
+        canvas.delete("all")
+        items.clear()
+        size = max(10, min(40, size))
+        f1 = max(9, size - 3)
+        head_h, hint_h = 22, 18
+        l1_h, l2_h = int(f1 * 1.7), int(size * 1.7)
+        w = _WIDTH
+        h = _PAD + head_h + l1_h + l2_h + hint_h + _PAD
+        items["panel"] = round_rect(0, 0, w, h, 18, fill=_PANEL, outline=_BORDER)
+        items["dot"] = canvas.create_oval(_PAD, _PAD + 5, _PAD + 13, _PAD + 17, fill=_DOT, outline="")
+        items["status"] = canvas.create_text(
+            _PAD + 22, _PAD + 11, anchor="w", text="", fill=_STATUS, font=("Microsoft YaHei", 10)
+        )
+        y1 = _PAD + head_h
+        items["line1"] = canvas.create_text(
+            _PAD, y1 + l1_h // 2, anchor="w", text="", fill=_FG_PREV, font=("Microsoft YaHei", f1)
+        )
+        y2 = y1 + l1_h
+        items["line2"] = canvas.create_text(
+            _PAD, y2 + l2_h // 2, anchor="w", text="", fill=_FG_CUR, font=("Microsoft YaHei", size)
+        )
+        items["hint"] = canvas.create_text(
+            w - _PAD, h - _PAD + 4, anchor="se", text="", fill=_HINT, font=("Microsoft YaHei", 9)
+        )
+        usable = w - 2 * _PAD
+        return w, h, max(6, int(usable / size)), max(6, int(usable / f1))
+
+    def build_dot():
+        canvas.delete("all")
+        items.clear()
+        w, h = _DOT_SIZE
+        items["panel"] = round_rect(0, 0, w, h, min(h // 2, 20), fill=_PANEL, outline=_BORDER)
+        items["dot"] = canvas.create_oval(_PAD, 13, _PAD + 13, 26, fill=_DOT, outline="")
+        items["status"] = canvas.create_text(
+            _PAD + 22, 20, anchor="w", text="", fill=_STATUS, font=("Microsoft YaHei", 10)
+        )
+        return w, h
+
+    def on_press(event):
         drag["active"] = True
         drag["dx"] = event.x_root - root.winfo_x()
         drag["dy"] = event.y_root - root.winfo_y()
 
-    def on_motion(event) -> None:
+    def on_motion(event):
         if not drag["active"]:
             return
         x = event.x_root - drag["dx"]
@@ -144,65 +185,61 @@ def main() -> int:
         pos["xy"] = (x, y)
         root.geometry(f"+{x}+{y}")
 
-    def on_release(_event) -> None:
+    def on_release(_event):
         if drag["active"]:
             drag["active"] = False
             pos["xy"] = (root.winfo_x(), root.winfo_y())
             _save_pos(*pos["xy"])
 
-    root.bind_all("<ButtonPress-1>", on_press)
-    root.bind_all("<B1-Motion>", on_motion)
-    root.bind_all("<ButtonRelease-1>", on_release)
+    canvas.bind("<ButtonPress-1>", on_press)
+    canvas.bind("<B1-Motion>", on_motion)
+    canvas.bind("<ButtonRelease-1>", on_release)
 
-    def tick() -> None:
+    def tick():
         state, mtime = _read_state()
         if mtime == 0.0 or (time.time() - mtime) > _STALE_SECONDS:
             root.destroy()  # 主程序已退出
             return
-        if state is None:  # 瞬时读取问题：保留上一帧，继续
+        if state is None:  # 瞬时读取问题：保留上一帧
             root.after(120, tick)
             return
 
         mode = state.get("mode", "show")
         status = state.get("status", "idle")
 
-        if mode == "off" or status not in _STATUS_COLOR:
-            if shown["visible"]:
+        if mode == "off" or status not in _DOT_COLOR:
+            if ui["visible"]:
                 root.withdraw()
-                shown["visible"] = False
+                ui["visible"] = False
             root.after(120, tick)
             return
 
-        dot.config(fg=_STATUS_COLOR.get(status, _DOT))
-        status_lbl.config(text=_STATUS_TEXT.get(status, ""))
-
         if mode == "dot":
-            if shown["layout"] != "dot":
-                body.pack_forget()
-                head.pack_configure(pady=(9, 9))
-                geometry_for(_DOT_SIZE)
-                shown["layout"], shown["font"] = "dot", None
+            if ui["layout"] != "dot":
+                w, h = build_dot()
+                geometry_for(w, h)
+                ui.update(layout="dot", font=None)
+            canvas.itemconfig(items["dot"], fill=_DOT_COLOR.get(status, _DOT))
+            canvas.itemconfig(items["status"], text=_STATUS_TEXT.get(status, ""))
         else:
             size = max(10, min(40, int(state.get("font_size", 15) or 15)))
-            if shown["layout"] != "show" or shown["font"] != size:
-                head.pack_configure(pady=(8, 0))
-                body.pack(fill="x", padx=14, pady=(2, 10))
-                line1.config(font=("Microsoft YaHei", max(9, size - 3)))
-                line2.config(font=("Microsoft YaHei", size))
-                shown["lim1"] = max(8, int((_WIDTH - 40) / max(9, size - 3)))
-                shown["lim2"] = max(8, int((_WIDTH - 40) / size))
-                geometry_for((_WIDTH, max(84, int((size - 3) * 1.9 + size * 1.9 + 46))))
-                shown["layout"], shown["font"] = "show", size
-            line1.config(text=_fit(state.get("line1", ""), shown["lim1"]))
-            text2 = _fit(state.get("line2", ""), shown["lim2"])
+            if ui["layout"] != "show" or ui["font"] != size:
+                w, h, lim2, lim1 = build_show(size)
+                geometry_for(w, h)
+                ui.update(layout="show", font=size, lim2=lim2, lim1=lim1)
+            canvas.itemconfig(items["dot"], fill=_DOT_COLOR.get(status, _DOT))
+            canvas.itemconfig(items["status"], text=_STATUS_TEXT.get(status, ""))
+            canvas.itemconfig(items["line1"], text=_fit(state.get("line1", ""), ui["lim1"]))
+            text2 = _fit(state.get("line2", ""), ui["lim2"])
             if status == "processing" and not text2:
                 text2 = "…"
-            line2.config(text=text2)
+            canvas.itemconfig(items["line2"], text=text2)
+            canvas.itemconfig(items["hint"], text=str(state.get("hint", "") or ""))
 
-        if not shown["visible"]:
+        if not ui["visible"]:
             root.deiconify()
             root.lift()
-            shown["visible"] = True
+            ui["visible"] = True
         root.after(120, tick)
 
     root.withdraw()
