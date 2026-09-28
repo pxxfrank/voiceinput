@@ -207,17 +207,6 @@ dist/                打包产物（git 忽略）
 models/              本地模型（git 忽略）
 ```
 
-## 发布（CI 自动打包）
-
-打一个 tag 即自动构建并发布 Release（GitHub Actions：`.github/workflows/release.yml`）：
-
-```bash
-git tag v0.1.3 && git push origin v0.1.3
-```
-
-工作流会：安装依赖 → 下载 SenseVoice 模型 → PyInstaller 打包 exe → 组装「exe + 模型」便携包 →
-作为附件发布到对应 Release。也可在仓库 Actions 页**手动触发**（手动触发只构建、不发版，用于验证）。
-
 ## 隐私说明
 
 - 除首次下载模型外，程序不会访问网络。
