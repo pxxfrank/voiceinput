@@ -2,8 +2,11 @@
 
 独立小进程（tkinter 需独占主线程），读取状态文件 ``hud.state`` 渲染：
 - 顶部：状态圆点（红=录音、黄=转写）+ 说明
-- 中部：两行字幕（第一行=已经说过、第二行=正在说）
+- 中部：第一行=已经说过的上一句（灰），第二行=正在说的话（白）
 - 底部：提示当前按什么键可以停止/取消
+
+字幕按面板宽度**自动换行**（一句话过长则多行呈现），面板高度自适应；
+即使当前句很长，上一句也会一直保留在最上面。
 
 状态文件由主程序**原子写入**；主程序每几秒刷新心跳，文件超 15 秒未更新则本窗自动关闭。
 窗口可拖动，位置记在 ``hud.pos``。
@@ -37,6 +40,7 @@ _STATUS_TEXT = {"recording": "录音中", "processing": "转写中", "error": "�
 
 _WIDTH = 660
 _PAD = 18
+_HEAD_H = 22
 _DOT_SIZE = (180, 40)
 
 
@@ -83,13 +87,6 @@ def _save_pos(x: int, y: int) -> None:
         pass
 
 
-def _fit(text: str, limit: int) -> str:
-    text = (text or "").strip().replace("\n", " ")
-    if len(text) <= limit:
-        return text
-    return "…" + text[-(limit - 1):]
-
-
 def main() -> int:
     import tkinter as tk
 
@@ -106,12 +103,12 @@ def main() -> int:
     except Exception:
         pass
 
-    canvas = tk.Canvas(root, bg=_MAGIC, highlightthickness=0, bd=0)
+    canvas = tk.Canvas(root, bg=_MAGIC, highlightthickness=0, bd=0, width=_WIDTH, height=120)
     canvas.pack(fill="both", expand=True)
 
     items: dict[str, int] = {}
     pos = {"xy": _load_pos()}
-    ui = {"visible": False, "layout": None, "font": None, "lim1": 40, "lim2": 34}
+    ui = {"visible": False, "layout": None, "font": None, "h": 0}
     drag = {"dx": 0, "dy": 0, "active": False}
 
     def round_rect(x1, y1, x2, y2, r, **kw):
@@ -133,35 +130,34 @@ def main() -> int:
                 x = pos["xy"][0]
         root.geometry(f"{int(w)}x{int(h)}+{int(x)}+{int(y)}")
 
-    def build_show(size: int):
+    def build_show(size: int) -> None:
         canvas.delete("all")
         items.clear()
         size = max(10, min(40, size))
         f1 = max(9, size - 3)
-        head_h, hint_h = 22, 18
-        l1_h, l2_h = int(f1 * 1.7), int(size * 1.7)
-        w = _WIDTH
-        h = _PAD + head_h + l1_h + l2_h + hint_h + _PAD
-        items["panel"] = round_rect(0, 0, w, h, 18, fill=_PANEL, outline=_BORDER)
+        usable = _WIDTH - 2 * _PAD
         items["dot"] = canvas.create_oval(_PAD, _PAD + 5, _PAD + 13, _PAD + 17, fill=_DOT, outline="")
         items["status"] = canvas.create_text(
             _PAD + 22, _PAD + 11, anchor="w", text="", fill=_STATUS, font=("Microsoft YaHei", 10)
         )
-        y1 = _PAD + head_h
+        # 上一句（灰，较小）——始终保留
         items["line1"] = canvas.create_text(
-            _PAD, y1 + l1_h // 2, anchor="w", text="", fill=_FG_PREV, font=("Microsoft YaHei", f1)
+            _PAD, _PAD + _HEAD_H, anchor="nw", text="", fill=_FG_PREV,
+            font=("Microsoft YaHei", f1), width=usable,
         )
-        y2 = y1 + l1_h
+        # 当前句（白，较大）——过长自动换行
         items["line2"] = canvas.create_text(
-            _PAD, y2 + l2_h // 2, anchor="w", text="", fill=_FG_CUR, font=("Microsoft YaHei", size)
+            _PAD, _PAD + _HEAD_H, anchor="nw", text="", fill=_FG_CUR,
+            font=("Microsoft YaHei", size), width=usable,
         )
         items["hint"] = canvas.create_text(
-            w - _PAD, h - _PAD + 4, anchor="se", text="", fill=_HINT, font=("Microsoft YaHei", 9)
+            _WIDTH - _PAD, 0, anchor="ne", text="", fill=_HINT, font=("Microsoft YaHei", 9)
         )
-        usable = w - 2 * _PAD
-        return w, h, max(6, int(usable / size)), max(6, int(usable / f1))
+        items["panel"] = round_rect(0, 0, _WIDTH, 120, 18, fill=_PANEL, outline=_BORDER)
+        canvas.tag_lower(items["panel"])
+        ui.update(layout="show", font=size, h=0)
 
-    def build_dot():
+    def build_dot() -> None:
         canvas.delete("all")
         items.clear()
         w, h = _DOT_SIZE
@@ -170,7 +166,37 @@ def main() -> int:
         items["status"] = canvas.create_text(
             _PAD + 22, 20, anchor="w", text="", fill=_STATUS, font=("Microsoft YaHei", 10)
         )
-        return w, h
+        ui.update(layout="dot", font=None, h=h)
+
+    def layout_show(t1: str, t2: str, hint: str) -> None:
+        y = _PAD + _HEAD_H
+        if t1:
+            canvas.itemconfig(items["line1"], text=t1, state="normal")
+            canvas.coords(items["line1"], _PAD, y)
+            box = canvas.bbox(items["line1"])
+            y = (box[3] if box else y) + 6
+        else:
+            canvas.itemconfig(items["line1"], text="", state="hidden")
+
+        canvas.itemconfig(items["line2"], text=t2, state="normal")
+        canvas.coords(items["line2"], _PAD, y)
+        box = canvas.bbox(items["line2"])
+        y = (box[3] if box else y) + 8
+
+        if hint:
+            canvas.itemconfig(items["hint"], text=hint, state="normal")
+            canvas.coords(items["hint"], _WIDTH - _PAD, y)
+            y += 16
+        else:
+            canvas.itemconfig(items["hint"], text="", state="hidden")
+
+        total = int(y + _PAD)
+        if total != ui["h"]:
+            ui["h"] = total
+            canvas.delete(items["panel"])
+            items["panel"] = round_rect(0, 0, _WIDTH, total, 18, fill=_PANEL, outline=_BORDER)
+            canvas.tag_lower(items["panel"])
+            geometry_for(_WIDTH, total)
 
     def on_press(event):
         drag["active"] = True
@@ -216,25 +242,21 @@ def main() -> int:
 
         if mode == "dot":
             if ui["layout"] != "dot":
-                w, h = build_dot()
-                geometry_for(w, h)
-                ui.update(layout="dot", font=None)
+                build_dot()
+                geometry_for(*_DOT_SIZE)
             canvas.itemconfig(items["dot"], fill=_DOT_COLOR.get(status, _DOT))
             canvas.itemconfig(items["status"], text=_STATUS_TEXT.get(status, ""))
         else:
             size = max(10, min(40, int(state.get("font_size", 15) or 15)))
             if ui["layout"] != "show" or ui["font"] != size:
-                w, h, lim2, lim1 = build_show(size)
-                geometry_for(w, h)
-                ui.update(layout="show", font=size, lim2=lim2, lim1=lim1)
+                build_show(size)
             canvas.itemconfig(items["dot"], fill=_DOT_COLOR.get(status, _DOT))
             canvas.itemconfig(items["status"], text=_STATUS_TEXT.get(status, ""))
-            canvas.itemconfig(items["line1"], text=_fit(state.get("line1", ""), ui["lim1"]))
-            text2 = _fit(state.get("line2", ""), ui["lim2"])
-            if status == "processing" and not text2:
-                text2 = "…"
-            canvas.itemconfig(items["line2"], text=text2)
-            canvas.itemconfig(items["hint"], text=str(state.get("hint", "") or ""))
+            t1 = str(state.get("line1", "") or "").strip()
+            t2 = str(state.get("line2", "") or "").strip()
+            if status == "processing" and not t2:
+                t2 = "…"
+            layout_show(t1, t2, str(state.get("hint", "") or ""))
 
         if not ui["visible"]:
             root.deiconify()
