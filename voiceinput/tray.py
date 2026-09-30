@@ -83,9 +83,15 @@ class TrayController:
                     "字幕",
                     pystray.Menu(
                         pystray.MenuItem(
-                            "显示（两行字幕）",
+                            "悬浮字幕（2 行）",
                             lambda: self._on_set_caption("show"),
                             checked=lambda _i: self._caption_mode() == "show",
+                            radio=True,
+                        ),
+                        pystray.MenuItem(
+                            "字幕窗口（全部字幕）",
+                            lambda: self._on_set_caption("window"),
+                            checked=lambda _i: self._caption_mode() == "window",
                             radio=True,
                         ),
                         pystray.MenuItem(

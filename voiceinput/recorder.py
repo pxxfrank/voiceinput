@@ -94,6 +94,50 @@ def split_long_audio(
     return [seg for seg in segments if seg.size > 0]
 
 
+def streaming_split(
+    data: np.ndarray, sr: int = TARGET_SR, min_gap_ms: int = 300, min_seg_s: float = 1.0, max_seg_s: float = 28.0
+) -> int:
+    """流式切分：返回「可提交」的样本数。
+
+    提交点取末尾最近一次**足够长的停顿**之后 —— 即 ``data[:返回长度]`` 以停顿结尾、
+    可视为「已经说完」，可以累积进历史字幕。返回 0 表示暂无可提交内容。
+    若从头到尾没有停顿且 ``data`` 超过 ``max_seg_s``，则强制在 ``max_seg_s`` 处切分。
+    """
+    frame = max(1, int(sr * 0.02))
+    n = data.size // frame
+    max_len = int(max_seg_s * sr)
+    if n == 0:
+        return 0
+    rms = np.sqrt(
+        np.mean(data[: n * frame].astype(np.float64).reshape(n, frame) ** 2, axis=1) + 1e-12
+    )
+    silent = (20.0 * np.log10(rms + 1e-12)) < -45.0
+    gap = max(1, int(min_gap_ms / 20))
+    best = 0
+    j = 0
+    while j < n:
+        if silent[j]:
+            k = j
+            while k < n and silent[k]:
+                k += 1
+            if (k - j) >= gap and (k * frame) >= int(min_seg_s * sr):
+                best = k * frame
+            j = k
+        else:
+            j += 1
+    if best == 0 and data.size > max_len:
+        return max_len
+    return best
+
+
+def has_voice(samples, threshold_db: float = -45.0) -> bool:
+    """判断一小段音频里是否有人声（简单能量阈值）。"""
+    if samples is None or samples.size == 0:
+        return False
+    rms = float(np.sqrt(np.mean(np.asarray(samples, dtype=np.float64) ** 2) + 1e-12))
+    return 20.0 * np.log10(rms + 1e-12) > threshold_db
+
+
 class Recorder:
     """按住录音、松开停止的麦克风录制器。"""
 

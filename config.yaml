@@ -44,6 +44,8 @@ audio:
   min_duration: 0.3
   # 最长录音秒数（连续听写的安全上限），到点自动结束并转写
   max_duration: 300.0
+  # 连续多少秒没有语音输入就自动停止（0 = 不自动停止）
+  silence_timeout: 30.0
   # 自动裁剪首尾静音
   trim_silence: true
 

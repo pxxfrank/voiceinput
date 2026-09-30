@@ -80,13 +80,19 @@ def main() -> int:
     parser.add_argument("--no-tray", action="store_true", help="不显示系统托盘")
     parser.add_argument("--no-instance-lock", action="store_true", help="允许多开（调试用）")
     parser.add_argument("--settings", action="store_true", help="打开设置界面后退出")
-    parser.add_argument("--hud", action="store_true", help="运行悬浮录音指示器（内部用）")
+    parser.add_argument("--hud", action="store_true", help="悬浮字幕（内部用）")
+    parser.add_argument("--transcript", action="store_true", help="字幕窗口（内部用）")
     args = parser.parse_args()
 
     if args.hud:
         from .hud import main as hud_main
 
         return hud_main()
+
+    if args.transcript:
+        from .transcript import main as transcript_main
+
+        return transcript_main()
 
     if args.settings:
         from .gui import main as gui_main

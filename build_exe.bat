@@ -26,6 +26,7 @@ echo [3/3] 打包（onedir）...
   --hidden-import voiceinput.devices ^
   --hidden-import voiceinput.history ^
   --hidden-import voiceinput.hud ^
+  --hidden-import voiceinput.transcript ^
   --hidden-import voiceinput.download_models ^
   main.py
 if errorlevel 1 ( echo [!] 打包失败 & pause & exit /b 1 )

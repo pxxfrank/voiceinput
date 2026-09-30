@@ -34,6 +34,7 @@ DEFAULTS: dict[str, Any] = {
         "device": None,
         "min_duration": 0.3,
         "max_duration": 300.0,
+        "silence_timeout": 30.0,
         "trim_silence": True,
     },
     "output": {

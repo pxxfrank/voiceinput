@@ -17,7 +17,7 @@ from .config import DEFAULT_CONFIG_PATH, PROJECT_ROOT, SETTINGS_RESTART_EXIT, re
 from .engines import build_engine
 from .hotkey import PushToTalk
 from .inject import insert_text
-from .recorder import TARGET_SR, Recorder, split_long_audio, trim_silence
+from .recorder import TARGET_SR, Recorder, has_voice, split_long_audio, streaming_split, trim_silence
 
 log = logging.getLogger("voiceinput")
 
@@ -29,29 +29,26 @@ except ImportError:  # pragma: no cover - 非 Windows
 _TERMINATORS = "。！？!?；;\n"
 
 
-def split_caption(text: str) -> tuple[str, str]:
-    """把转写文本切成 (上一句, 当前句) 两行。
+def analyze_caption(full: str) -> dict:
+    """把完整文本拆成字幕/转录所需的各字段。
 
-    按句末标点断句：倒数第二句放在第一行，最后一段（可能是未说完的半句）放在第二行。
+    返回 ``line1``（上一句）、``line2``（当前句）、``history``（已说完的文本）、``current``（正在说）。
     """
-    text = (text or "").strip()
-    if not text:
-        return "", ""
+    full = (full or "").strip()
+    if not full:
+        return {"line1": "", "line2": "", "history": "", "current": ""}
     parts: list[str] = []
     buf = ""
-    for ch in text:
+    for ch in full:
         buf += ch
         if ch in _TERMINATORS:
             if buf.strip():
                 parts.append(buf.strip())
             buf = ""
-    if buf.strip():
-        parts.append(buf.strip())
-    if not parts:
-        return "", ""
-    if len(parts) == 1:
-        return "", parts[0]
-    return parts[-2], parts[-1]
+    tail = buf.strip()
+    line1 = parts[-2] if len(parts) >= 2 else ""
+    line2 = tail if tail else (parts[-1] if parts else "")
+    return {"line1": line1, "line2": line2, "history": "".join(parts), "current": tail}
 
 
 class VoiceInputApp:
@@ -65,13 +62,17 @@ class VoiceInputApp:
         self._restart_requested = False
         self._cancel = False
         self._last_insert: Optional[tuple[str, float]] = None
-        self._hud_proc = None
         self._status = "idle"
         self._partial_stop = threading.Event()
+        self._overlay_proc = None
+        self._overlay_kind = ""
+        self._tx_pos = 0
+        self._tx_committed = ""
+        self._tx_current = ""
+        self._caption_info = {"line1": "", "line2": "", "history": "", "current": ""}
         caption = cfg.get("caption", {})
         self._caption_mode = str(caption.get("mode", "show"))
         self._caption_font_size = int(caption.get("font_size", 15))
-        self._caption_lines = ["", ""]
 
         self._recording_owner: Optional[str] = None
         self._continuous_last = 0.0
@@ -137,9 +138,8 @@ class VoiceInputApp:
                 log.warning("系统托盘不可用：%s", exc)
                 self._tray = None
 
-        # 4) 字幕窗
-        if self._caption_mode != "off":
-            self._start_hud()
+        # 4) 字幕浮层（2 行）/ 字幕窗口（全部字幕）
+        self._start_overlay()
         threading.Thread(target=self._hud_heartbeat, daemon=True).start()
 
         # 5) 撤销上屏热键
@@ -174,7 +174,7 @@ class VoiceInputApp:
         self._partial_stop.set()
         if self.recorder.recording:
             self.recorder.stop()
-        self._stop_hud()
+        self._stop_overlay()
         if self._tray:
             self._tray.stop()
 
@@ -216,7 +216,10 @@ class VoiceInputApp:
             return
         self._cancel = False
         self._recording_owner = owner
-        self._caption_lines = ["", ""]
+        self._caption_info = {"line1": "", "line2": "", "history": "", "current": ""}
+        self._tx_pos = 0
+        self._tx_committed = ""
+        self._tx_current = ""
         self._beep("start")
         self.recorder.start()
         self._set_hud("recording")
@@ -261,7 +264,7 @@ class VoiceInputApp:
         if self._cancel:
             self._cancel = False
             self._beep("error")
-            self._caption_lines = ["", ""]
+            self._caption_info = {"line1": "", "line2": "", "history": "", "current": ""}
             self._set_hud("idle")
             if self._tray:
                 self._tray.set_status("idle", "voiceinput - 已取消")
@@ -302,6 +305,14 @@ class VoiceInputApp:
                 log.info("未识别到有效内容。")
                 return
             spoken = self._apply_replacements(text)
+            final = analyze_caption(spoken)
+            self._caption_info = {
+                "line1": final["line1"],
+                "line2": "",
+                "history": spoken,
+                "current": "",
+            }
+            self._write_state()
 
             out = self.cfg.get("output", {})
             payload = spoken
@@ -324,7 +335,6 @@ class VoiceInputApp:
             log.exception("转写失败：%s", exc)
             self._beep("error")
         finally:
-            self._caption_lines = ["", ""]
             self._set_hud("idle")
             if self._tray:
                 self._tray.set_status("idle", "voiceinput - 就绪")
@@ -333,12 +343,15 @@ class VoiceInputApp:
     # 字幕窗 / 撤销 / 文本替换
     # ------------------------------------------------------------------ #
     def _state(self) -> dict:
+        info = self._caption_info
         return {
             "status": self._status,
             "mode": self._caption_mode,
             "font_size": self._caption_font_size,
-            "line1": self._caption_lines[0],
-            "line2": self._caption_lines[1],
+            "line1": info["line1"],
+            "line2": info["line2"],
+            "history": info["history"],
+            "current": info["current"],
             "hint": self._caption_hint(),
         }
 
@@ -360,31 +373,48 @@ class VoiceInputApp:
         self._status = status
         self._write_state()
 
-    def _hud_command(self) -> list[str]:
+    def _overlay_kind_for_mode(self) -> str:
+        if self._caption_mode == "window":
+            return "transcript"
+        if self._caption_mode in ("show", "dot"):
+            return "hud"
+        return ""
+
+    def _overlay_command(self, kind: str) -> list[str]:
         if getattr(sys, "frozen", False):
-            return [sys.executable, "--hud"]
-        return [sys.executable, "-m", "voiceinput.hud"]
+            return [sys.executable, "--transcript" if kind == "transcript" else "--hud"]
+        module = "voiceinput.transcript" if kind == "transcript" else "voiceinput.hud"
+        return [sys.executable, "-m", module]
 
-    def _ensure_hud(self) -> None:
-        if self._hud_proc is None or self._hud_proc.poll() is not None:
-            self._start_hud()
-
-    def _start_hud(self) -> None:
+    def _start_overlay(self) -> None:
+        kind = self._overlay_kind_for_mode()
+        if not kind:
+            self._stop_overlay()
+            return
+        if (
+            self._overlay_proc is not None
+            and self._overlay_proc.poll() is None
+            and self._overlay_kind == kind
+        ):
+            return
+        self._stop_overlay()
         try:
-            self._hud_proc = subprocess.Popen(
-                self._hud_command(), cwd=str(PROJECT_ROOT), close_fds=True
+            self._overlay_proc = subprocess.Popen(
+                self._overlay_command(kind), cwd=str(PROJECT_ROOT), close_fds=True
             )
+            self._overlay_kind = kind
         except Exception as exc:  # pragma: no cover
-            log.warning("字幕窗启动失败：%s", exc)
-            self._hud_proc = None
+            log.warning("字幕浮层启动失败：%s", exc)
+            self._overlay_proc = None
 
-    def _stop_hud(self) -> None:
-        if self._hud_proc and self._hud_proc.poll() is None:
+    def _stop_overlay(self) -> None:
+        if self._overlay_proc and self._overlay_proc.poll() is None:
             try:
-                self._hud_proc.terminate()
+                self._overlay_proc.terminate()
             except Exception:
                 pass
-        self._hud_proc = None
+        self._overlay_proc = None
+        self._overlay_kind = ""
         hud.clear_state()
 
     def _hud_heartbeat(self) -> None:
@@ -393,7 +423,7 @@ class VoiceInputApp:
             self._quit.wait(4.0)
 
     def set_caption_mode(self, mode: str) -> None:
-        if mode not in ("show", "dot", "off"):
+        if mode not in ("show", "window", "dot", "off"):
             return
         self._caption_mode = mode
         self.cfg.setdefault("caption", {})["mode"] = mode
@@ -403,11 +433,8 @@ class VoiceInputApp:
             save_config(self.cfg)
         except Exception:
             pass
-        if mode == "off":
-            self._stop_hud()
-        else:
-            self._ensure_hud()
-            self._write_state()
+        self._start_overlay()
+        self._write_state()
 
     def set_caption_font_size(self, size: int) -> None:
         try:
@@ -435,24 +462,50 @@ class VoiceInputApp:
 
     def _partial_loop(self) -> None:
         caption = self.cfg.get("caption", {})
+        audio_cfg = self.cfg.get("audio", {})
         interval = float(caption.get("interval", 0.5))
-        window = int(float(caption.get("window", 25.0)) * TARGET_SR)
+        silence_timeout = float(audio_cfg.get("silence_timeout", 30.0) or 0)
+        last_voice = time.time()
         while not self._partial_stop.wait(interval):
             if self._cancel or not self.recorder.recording:
                 break
             data = self.recorder.snapshot()
             if data is None or data.size < int(TARGET_SR * 0.4):
                 continue
-            if data.size > window:
-                data = data[-window:]
+            # 连续一段时间没有语音输入 → 自动停止
+            if silence_timeout > 0:
+                if has_voice(data[-int(TARGET_SR * 0.6):]):
+                    last_voice = time.time()
+                elif time.time() - last_voice > silence_timeout:
+                    log.info("连续 %.0f 秒无语音输入，自动停止。", silence_timeout)
+                    self._finish()
+                    break
+            # 末尾已有停顿的部分 → 累积进「历史」
             try:
-                with self._lock:
-                    text = self.engine.transcribe(data, TARGET_SR)
+                cut = streaming_split(data[self._tx_pos:], TARGET_SR)
             except Exception:
-                continue
-            line1, line2 = split_caption(text)
-            self._caption_lines = [line1, line2]
+                cut = 0
+            if cut > 0:
+                self._tx_committed += self._decode_text(data[self._tx_pos:self._tx_pos + cut])
+                self._tx_pos += cut
+            rest = data[self._tx_pos:]
+            cap = int(30 * TARGET_SR)
+            if rest.size > cap:  # 长时间不停顿：强制提交，避免越滚越大
+                self._tx_committed += self._decode_text(rest[:cap])
+                self._tx_pos += cap
+                rest = data[self._tx_pos:]
+            self._tx_current = self._decode_text(rest) if rest.size >= int(TARGET_SR * 0.4) else ""
+            self._caption_info = analyze_caption(self._tx_committed + self._tx_current)
             self._write_state()
+
+    def _decode_text(self, audio) -> str:
+        if audio is None or audio.size == 0:
+            return ""
+        try:
+            with self._lock:
+                return (self.engine.transcribe(audio, TARGET_SR) or "").strip()
+        except Exception:
+            return ""
 
     def _undo(self) -> None:
         if not self._last_insert:
