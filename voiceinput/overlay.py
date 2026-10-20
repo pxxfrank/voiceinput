@@ -1,8 +1,8 @@
-"""悬浮输入窗与精修面板（进程内 Tk，主线程）。
+"""悬浮输入窗与整理结果面板（进程内 Tk，主线程）。
 
 - 悬浮窗置顶、不抢焦点（WS_EX_NOACTIVATE），可拖动、记忆位置。
 - 稳定文本与未稳定文本用不同颜色区分；窗口高度固定，避免实时输入时跳动。
-- 精修面板是普通窗口，可编辑、对照原文、按片段重识别/重精修。
+- 整理结果面板合并所有片段，提供全文精修、原文对比、编辑、复制/插入。
 """
 
 from __future__ import annotations
@@ -363,103 +363,95 @@ class ReviewWindow:
         self.on_command = on_command
         self.colors = DARK if (cfg.get("ui", {}) or {}).get("theme", "dark") != "light" else LIGHT
         self.win: tk.Toplevel | None = None
-        self.segments: list[Any] = []
-        self.current_index = 0
-        self.show_original = tk.BooleanVar(value=False)
-        self._editing = False
+        self.text = ""
+        self.original = ""
+        self._dirty = False
+        self.compare: CompareWindow | None = None
 
     def _ensure(self) -> tk.Toplevel:
         if self.win and self.win.winfo_exists():
             return self.win
         c = self.colors
         win = tk.Toplevel(self.root)
-        win.title("精修结果 - 本地语音输入")
+        win.title("整理结果 - 本地语音输入")
         sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
-        width = min(860, max(720, sw - 120))
-        height = min(620, max(460, sh - 140))
+        width = min(960, max(760, sw - 140))
+        height = min(680, max(500, sh - 140))
         win.geometry(f"{width}x{height}+{(sw - width) // 2}+{(sh - height) // 2}")
-        win.minsize(720, 460)
+        win.minsize(760, 500)
         win.configure(bg=c["bg"])
         win.protocol("WM_DELETE_WINDOW", self.hide)
 
         top = tk.Frame(win, bg=c["bg"], padx=16, pady=10)
         top.pack(fill="x")
-        tk.Label(top, text="精修结果", bg=c["bg"], fg=c["fg"], font=("Microsoft YaHei", 14, "bold")).pack(side="left")
+        tk.Label(top, text="整理结果", bg=c["bg"], fg=c["fg"], font=("Microsoft YaHei", 14, "bold")).pack(side="left")
         self.model_label = tk.Label(top, text="", bg=c["bg"], fg=c["muted"], font=("Microsoft YaHei", 9))
         self.model_label.pack(side="right")
 
-        bottom = tk.Frame(win, bg=c["bg"], padx=16, pady=12)
-        bottom.pack(side="bottom", fill="x")
-        for label, action in (
-            ("插入到原窗口", "review_insert"),
-            ("复制", "review_copy"),
-            ("重新识别", "review_rerecognize"),
-            ("重新精修", "review_rerun"),
-            ("差异对照", "review_diff"),
-            ("精修选中", "review_refine_selection"),
-            ("深度整理", "review_deep"),
-            ("恢复原文", "review_restore"),
-            ("关闭", "review_close"),
-        ):
-            tk.Button(
-                bottom, text=label, bg=c["btn"] if action not in ("review_insert",) else c["accent"],
-                fg=c["fg"] if action != "review_insert" else "#ffffff",
-                activebackground=c["btn_hover"], activeforeground=c["fg"], relief="flat", bd=0,
-                padx=10, pady=6, cursor="hand2", takefocus=0, font=("Microsoft YaHei", 8),
-                command=lambda a=action: self.on_command(a, self._current_segment()),
-            ).pack(side="left", padx=(0, 5))
-        self.status = tk.Label(bottom, text="", bg=c["bg"], fg=c["muted"], font=("Microsoft YaHei", 9))
-        self.status.pack(side="right")
-
-        body = tk.Frame(win, bg=c["bg"], padx=16, pady=0)
-        body.pack(fill="both", expand=True)
-
-        left = tk.Frame(body, bg=c["bg"], width=210)
-        left.pack(side="left", fill="y", padx=(0, 12))
-        tk.Label(left, text="片段", bg=c["bg"], fg=c["muted"], anchor="w", font=("Microsoft YaHei", 9)).pack(fill="x")
-        self.listbox = tk.Listbox(
-            left, bd=0, highlightthickness=1, highlightbackground=c["border"],
-            bg=c["card"], fg=c["fg"], selectbackground=c["accent"], selectforeground="#ffffff",
-            activestyle="none", font=("Microsoft YaHei", 9), exportselection=False,
-        )
-        self.listbox.pack(fill="both", expand=True, pady=(4, 0))
-        self.listbox.bind("<<ListboxSelect>>", self._on_select)
-
-        right = tk.Frame(body, bg=c["bg"])
-        right.pack(side="left", fill="both", expand=True)
-        bar = tk.Frame(right, bg=c["bg"])
-        bar.pack(fill="x", pady=(0, 6))
-        tk.Radiobutton(
-            bar, text="精修", variable=self.show_original, value=False, command=self._render,
-            bg=c["bg"], fg=c["fg"], selectcolor=c["card"], activebackground=c["bg"],
-            activeforeground=c["fg"], font=("Microsoft YaHei", 9),
+        toolbar = tk.Frame(win, bg=c["bg"], padx=16, pady=0)
+        toolbar.pack(fill="x")
+        tk.Button(
+            toolbar, text="精修全文", bg=c["btn"], fg=c["fg"], activebackground=c["btn_hover"],
+            activeforeground=c["fg"], relief="flat", bd=0, padx=12, pady=5,
+            cursor="hand2", takefocus=0, font=("Microsoft YaHei", 9),
+            command=lambda: self.on_command("review_refine_all", None),
+        ).pack(side="left", padx=(0, 8))
+        tk.Button(
+            toolbar, text="对比原文", bg=c["bg"], fg=c["muted"], activebackground=c["bg"],
+            activeforeground=c["fg"], relief="flat", bd=0, padx=8, pady=5,
+            cursor="hand2", takefocus=0, font=("Microsoft YaHei", 9), command=self._open_compare,
+        ).pack(side="left", padx=(0, 4))
+        tk.Button(
+            toolbar, text="恢复原文", bg=c["bg"], fg=c["muted"], activebackground=c["bg"],
+            activeforeground=c["fg"], relief="flat", bd=0, padx=8, pady=5,
+            cursor="hand2", takefocus=0, font=("Microsoft YaHei", 9), command=self._restore_original,
         ).pack(side="left")
-        tk.Radiobutton(
-            bar, text="原文", variable=self.show_original, value=True, command=self._render,
-            bg=c["bg"], fg=c["fg"], selectcolor=c["card"], activebackground=c["bg"],
-            activeforeground=c["fg"], font=("Microsoft YaHei", 9),
-        ).pack(side="left", padx=(10, 0))
-        self.info = tk.Label(bar, text="", bg=c["bg"], fg=c["muted"], font=("Microsoft YaHei", 9))
+        self.info = tk.Label(toolbar, text="", bg=c["bg"], fg=c["muted"], font=("Microsoft YaHei", 9))
         self.info.pack(side="right")
 
+        body = tk.Frame(win, bg=c["bg"], padx=16)
+        body.pack(fill="both", expand=True)
         self.editor = tk.Text(
-            right, wrap="word", bd=0, highlightthickness=1, highlightbackground=c["border"],
-            bg=c["card"], fg=c["fg"], padx=12, pady=10, undo=True,
-            font=("Microsoft YaHei", 11), spacing1=2, spacing3=2,
+            body, wrap="word", bd=0, highlightthickness=1, highlightbackground=c["border"],
+            bg=c["card"], fg=c["fg"], padx=14, pady=12, undo=True,
+            font=("Microsoft YaHei", 11), spacing1=3, spacing3=3,
         )
         self.editor.tag_configure("base", foreground=c["fg"])
         self.editor.pack(fill="both", expand=True)
         self.editor.bind("<KeyRelease>", self._on_edit)
 
+        bottom = tk.Frame(win, bg=c["bg"], padx=16, pady=10)
+        bottom.pack(side="bottom", fill="x")
+        tk.Button(
+            bottom, text="插入到原窗口", bg=c["accent"], fg="#ffffff",
+            activebackground=c["btn_hover"], activeforeground="#ffffff", relief="flat", bd=0,
+            padx=14, pady=7, cursor="hand2", takefocus=0, font=("Microsoft YaHei", 9),
+            command=lambda: self.on_command("review_insert", None),
+        ).pack(side="left", padx=(0, 8))
+        for label, action in (("复制", "review_copy"), ("关闭", "review_close")):
+            tk.Button(
+                bottom, text=label, bg=c["btn"], fg=c["fg"], activebackground=c["btn_hover"],
+                activeforeground=c["fg"], relief="flat", bd=0, padx=14, pady=7,
+                cursor="hand2", takefocus=0, font=("Microsoft YaHei", 9),
+                command=lambda a=action: self.on_command(a, None),
+            ).pack(side="left", padx=(0, 8))
+        self.status = tk.Label(bottom, text="", bg=c["bg"], fg=c["muted"], font=("Microsoft YaHei", 9))
+        self.status.pack(side="right")
+        bottom.pack_forget()
+        bottom.pack(side="bottom", fill="x", before=body)
+
         self.win = win
         return win
 
-    def show(self, segments: list[Any], *, model_status: str = "", status: str = "") -> None:
-        self.segments = segments
+    def show(self, text: str, original: str = "", *, model_status: str = "", status: str = "") -> None:
+        self.text = (text or "").strip()
+        self.original = (original or "").strip()
+        self._dirty = False
         win = self._ensure()
         self.model_label.configure(text=model_status)
-        self.status.configure(text=status)
-        self._populate()
+        self.status.configure(text=status or "可直接编辑、精修全文、对比原文或复制")
+        self._set_editor(self.text)
+        self.info.configure(text=f"{len(self.text)} 字")
         win.deiconify()
         win.lift()
         try:
@@ -468,7 +460,34 @@ class ReviewWindow:
             pass
         win.focus_force()
 
+    def update_texts(self, text: str, original: str, *, force: bool = False) -> None:
+        """片段更新时刷新合并文本；用户已手动编辑时不覆盖。"""
+        self.original = (original or "").strip()
+        if not self._dirty or force:
+            self.text = (text or "").strip()
+            self._set_editor(self.text)
+            self._dirty = False
+        if self.win and self.win.winfo_exists():
+            self.info.configure(text=f"{len(self.get_text())} 字")
+            if self.compare:
+                self.compare.show(self.original, self.get_text())
+
+    def _set_editor(self, text: str) -> None:
+        if not hasattr(self, "editor"):
+            return
+        self.editor.configure(state="normal")
+        self.editor.delete("1.0", "end")
+        self.editor.insert("1.0", text, "base")
+        self.editor.configure(fg=self.colors["fg"], insertbackground=self.colors["fg"])
+
+    def get_text(self) -> str:
+        if not hasattr(self, "editor"):
+            return self.text
+        return self.editor.get("1.0", "end-1c").strip()
+
     def hide(self) -> None:
+        if self.compare:
+            self.compare.hide()
         if self.win and self.win.winfo_exists():
             self.win.withdraw()
 
@@ -476,64 +495,23 @@ class ReviewWindow:
     def visible(self) -> bool:
         return bool(self.win and self.win.winfo_exists() and self.win.state() != "withdrawn")
 
-    def _populate(self) -> None:
-        self.listbox.delete(0, "end")
-        for i, seg in enumerate(self.segments):
-            preview = (seg.display_text or "（空）").replace("\n", " ")[:28]
-            flag = "✓" if seg.commit_status == "committed" else ("!" if seg.requires_review else "·")
-            self.listbox.insert("end", f"{flag} {i + 1:02d}  {preview}")
-        if self.segments:
-            idx = min(self.current_index, len(self.segments) - 1)
-            self.listbox.selection_set(idx)
-            self.current_index = idx
-            self._render()
-        else:
-            self.editor.delete("1.0", "end")
-
-    def _current_segment(self):
-        if not self.segments:
-            return None
-        return self.segments[max(0, min(self.current_index, len(self.segments) - 1))]
-
-    def _on_select(self, _event=None) -> None:
-        selection = self.listbox.curselection()
-        if not selection:
-            return
-        self.current_index = selection[0]
-        self._render()
-
-    def _render(self) -> None:
-        seg = self._current_segment()
-        if seg is None:
-            return
-        text = seg.original_text if self.show_original.get() else (seg.user_edited or seg.refined or seg.faithful_text)
-        self.editor.configure(state="normal")
-        self.editor.delete("1.0", "end")
-        self.editor.insert("1.0", text, "base")
-        self.editor.configure(state="normal" if not self.show_original.get() else "disabled")
-        self.editor.configure(fg=self.colors["fg"], insertbackground=self.colors["fg"])
-        notes = []
-        if seg.requires_review:
-            notes.append("需要复核")
-        if seg.guard.get("warnings"):
-            notes.append("；".join(seg.guard["warnings"][:2]))
-        if seg.error:
-            notes.append(seg.error[:60])
-        self.info.configure(text=" · ".join(notes) if notes else f"{seg.duration:.1f}s")
-        self.status.configure(text="可手动修改；插入时以编辑框内容为准" if not self.show_original.get() else "原文只读")
-
     def _on_edit(self, _event=None) -> None:
-        if self._editing or self.show_original.get():
-            return
-        seg = self._current_segment()
-        if seg is None:
-            return
-        self._editing = True
-        try:
-            seg.user_edited = self.editor.get("1.0", "end-1c").strip()
-            seg.bump()
-        finally:
-            self._editing = False
+        self._dirty = True
+        self.text = self.get_text()
+        self.info.configure(text=f"{len(self.text)} 字")
+        self.status.configure(text="已手动修改；插入/复制以此为准")
+
+    def _restore_original(self) -> None:
+        self._set_editor(self.original)
+        self._dirty = True
+        self.text = self.original
+        self.info.configure(text=f"{len(self.text)} 字")
+        self.status.configure(text="已恢复原文；可继续编辑或复制")
+
+    def _open_compare(self) -> None:
+        if self.compare is None:
+            self.compare = CompareWindow(self.root, self.cfg)
+        self.compare.show(self.original, self.get_text())
 
     def current_selection(self) -> tuple[str, str, str] | None:
         """返回 (选中文本, 起始索引, 结束索引)；无选中返回 None。"""
@@ -556,10 +534,7 @@ class ReviewWindow:
             end = self.editor.index("sel.last")
             self.editor.delete(start, end)
             self.editor.insert(start, new_text)
-            seg = self._current_segment()
-            if seg is not None:
-                seg.user_edited = self.editor.get("1.0", "end-1c").strip()
-                seg.bump()
+            self._on_edit()
             self.status.configure(text="已替换选中内容")
         except Exception:
             pass
@@ -572,7 +547,91 @@ class ReviewWindow:
 
     def refresh(self) -> None:
         if self.visible:
-            self._populate()
+            self.info.configure(text=f"{len(self.get_text())} 字")
+
+
+class CompareWindow:
+    """只读的原文 / 当前结果对照，不打断主编辑框。"""
+
+    def __init__(self, root: tk.Tk, cfg: dict[str, Any]) -> None:
+        self.root = root
+        self.cfg = cfg
+        self.colors = DARK if (cfg.get("ui", {}) or {}).get("theme", "dark") != "light" else LIGHT
+        self.win: tk.Toplevel | None = None
+        self.left: tk.Text | None = None
+        self.right: tk.Text | None = None
+
+    def _ensure(self) -> tk.Toplevel:
+        if self.win and self.win.winfo_exists():
+            return self.win
+        c = self.colors
+        win = tk.Toplevel(self.root)
+        win.title("对比原文 - 本地语音输入")
+        sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
+        width, height = min(1000, max(760, sw - 160)), min(620, max(460, sh - 160))
+        win.geometry(f"{width}x{height}+{(sw - width) // 2}+{(sh - height) // 2}")
+        win.minsize(760, 460)
+        win.configure(bg=c["bg"])
+        win.protocol("WM_DELETE_WINDOW", self.hide)
+
+        top = tk.Frame(win, bg=c["bg"], padx=16, pady=10)
+        top.pack(fill="x")
+        tk.Label(top, text="原文 / 当前结果", bg=c["bg"], fg=c["fg"], font=("Microsoft YaHei", 13, "bold")).pack(side="left")
+        tk.Button(
+            top, text="关闭", bg=c["btn"], fg=c["fg"], activebackground=c["btn_hover"],
+            activeforeground=c["fg"], relief="flat", bd=0, padx=12, pady=5,
+            cursor="hand2", takefocus=0, font=("Microsoft YaHei", 9), command=self.hide,
+        ).pack(side="right")
+
+        body = tk.Frame(win, bg=c["bg"], padx=16, pady=0)
+        body.pack(fill="both", expand=True)
+        left_frame = tk.Frame(body, bg=c["bg"])
+        left_frame.pack(side="left", fill="both", expand=True, padx=(0, 6))
+        tk.Label(left_frame, text="原文", bg=c["bg"], fg=c["muted"], anchor="w", font=("Microsoft YaHei", 9)).pack(fill="x")
+        self.left = tk.Text(
+            left_frame, wrap="word", bd=0, highlightthickness=1, highlightbackground=c["border"],
+            bg=c["card"], fg=c["fg"], padx=10, pady=8, font=("Microsoft YaHei", 10),
+        )
+        self.left.pack(fill="both", expand=True)
+        right_frame = tk.Frame(body, bg=c["bg"])
+        right_frame.pack(side="left", fill="both", expand=True, padx=(6, 0))
+        tk.Label(right_frame, text="当前结果", bg=c["bg"], fg=c["muted"], anchor="w", font=("Microsoft YaHei", 9)).pack(fill="x")
+        self.right = tk.Text(
+            right_frame, wrap="word", bd=0, highlightthickness=1, highlightbackground=c["border"],
+            bg=c["card"], fg=c["fg"], padx=10, pady=8, font=("Microsoft YaHei", 10),
+        )
+        self.right.pack(fill="both", expand=True)
+        for widget in (self.left, self.right):
+            widget.configure(state="disabled")
+            widget.tag_configure("base", foreground=c["fg"])
+            widget.tag_configure("del", foreground="#e5484d", overstrike=True)
+            widget.tag_configure("ins", foreground="#46a758", underline=True)
+        self.win = win
+        return win
+
+    def show(self, original: str, current: str) -> None:
+        from .refinement import diff_ops
+
+        win = self._ensure()
+        assert self.left is not None and self.right is not None
+        self.left.configure(state="normal")
+        self.right.configure(state="normal")
+        self.left.delete("1.0", "end")
+        self.right.delete("1.0", "end")
+        for tag, left_text, right_text in diff_ops(original or "", current or ""):
+            if left_text:
+                self.left.insert("end", left_text, "del" if tag in ("delete", "replace") else "base")
+            if right_text:
+                self.right.insert("end", right_text, "ins" if tag in ("insert", "replace") else "base")
+        self.left.configure(state="disabled")
+        self.right.configure(state="disabled")
+        win.deiconify()
+        win.lift()
+        win.focus_force()
+
+    def hide(self) -> None:
+        if self.win and self.win.winfo_exists():
+            self.win.withdraw()
 
 
 class DiffWindow:

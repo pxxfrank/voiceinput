@@ -1,4 +1,4 @@
-本地语音输入 LocalVoiceInput v1.1.0
+本地语音输入 LocalVoiceInput v1.2.0
 ==================================
 
 双击 LocalVoiceInput.exe 启动；首次启动按引导选择麦克风与快捷键。

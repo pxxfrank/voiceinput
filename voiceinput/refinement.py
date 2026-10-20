@@ -218,11 +218,11 @@ def diff_ops(original: str, revised: str) -> list[tuple[str, str, str]]:
     return result
 
 
-def compose_text(segments: list[Segment]) -> str:
-    """把片段拼成最终文本，避免重复标点/空格。"""
+def compose_text(segments: list[Segment], *, original: bool = False) -> str:
+    """把片段拼成最终文本，避免重复标点/空格。original=True 用识别原文。"""
     parts: list[str] = []
     for seg in segments:
-        text = seg.display_text
+        text = seg.original_text if original else seg.display_text
         if not text:
             continue
         if not parts:

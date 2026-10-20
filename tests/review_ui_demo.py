@@ -11,23 +11,21 @@ import tkinter as tk
 
 from voiceinput.config import load_config
 from voiceinput.overlay import ReviewWindow
-from voiceinput.refinement import Segment
 
 
 def main() -> None:
     root = tk.Tk()
     root.withdraw()
     window = ReviewWindow(root, load_config(), lambda action, payload: print(action, payload))
-    segments = [
-        Segment(id="s1", index=1, raw_asr="嗯那个我们今天呢主要是讨论一下 agent memory 的设计方案。"),
-        Segment(id="s2", index=2, raw_asr="第二部分讲 harness 和 session 的关系，可能下周完成。"),
-    ]
-    for seg in segments:
-        seg.reviewed_asr = seg.raw_asr
-        seg.normalized = seg.raw_asr
-        seg.refined = seg.raw_asr
-        seg.duration = 3.2
-    window.show(segments, model_status="LLM 已加载 · Qwen3.5-2B", status="可编辑、重新识别或重新精修")
+    original = (
+        "嗯那个我们今天呢主要是讨论一下 agent memory 的设计方案。"
+        "第二部分讲 harness 和 session 的关系，可能下周完成。"
+    )
+    combined = (
+        "今天主要讨论 Agent Memory 的设计方案。\n\n"
+        "第二部分讲 harness 和 session 的关系，可能下周完成。"
+    )
+    window.show(combined, original, model_status="LLM 已加载 · Qwen3.5-2B", status="可编辑、精修全文、对比原文或复制")
     root.update_idletasks()
     if window.win is not None:
         import ctypes

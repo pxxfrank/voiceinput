@@ -389,6 +389,13 @@ class VoiceInputApp:
         elif kind == "review_refresh":
             if self.review_ui:
                 self.review_ui.refresh()
+        elif kind == "review_refined_all":
+            if self.review_ui:
+                self.review_ui.update_texts(event.get("text", ""), event.get("original", ""), force=True)
+                self.review_ui.set_status("已精修全文；可继续编辑或复制")
+        elif kind == "review_refine_failed":
+            if self.review_ui:
+                self.review_ui.set_status(str(event.get("message", "精修失败，已保留原文")))
         elif kind == "review_committed":
             self._on_review_committed(event.get("text", ""))
         elif kind == "review_failed":
@@ -847,7 +854,11 @@ class VoiceInputApp:
             return
         self._refresh_overlay_text()
         if self.review_ui and self.review_ui.visible:
-            self.review_ui.refresh()
+            segments = self._review_segments(session)
+            self.review_ui.update_texts(
+                compose_text(segments),
+                compose_text(segments, original=True),
+            )
 
     def _on_session_stopped(self, event: dict) -> None:
         session = self.session
@@ -876,10 +887,12 @@ class VoiceInputApp:
             self.overlay.set_text(final_text, "", dim="")
             self.overlay.hide()
             if self.review_ui:
+                segments = self._review_segments(session)
                 self.review_ui.show(
-                    session.segments,
+                    compose_text(segments),
+                    compose_text(segments, original=True),
                     model_status=self._llm_label(),
-                    status="可编辑、重新识别或重新精修；插入时恢复到原窗口",
+                    status="可直接编辑；需要时点“精修全文”，或对比原文后复制",
                 )
             if self.auto_commit:
                 self.root.after(400, self.commit_review)  # type: ignore[union-attr]
@@ -962,11 +975,14 @@ class VoiceInputApp:
         self.state = "review"
         if self.review_ui:
             self.review_ui.set_status(f"插入失败：{error}")
-            self.review_ui.show(
-                self.session.segments if self.session else [],
-                model_status=self._llm_label(),
-                status=f"插入失败：{error}",
-            )
+            if self.session and not self.review_ui.visible:
+                segments = self._review_segments(self.session)
+                self.review_ui.show(
+                    compose_text(segments),
+                    compose_text(segments, original=True),
+                    model_status=self._llm_label(),
+                    status=f"插入失败：{error}",
+                )
         if self.overlay:
             self.overlay.show("target_changed")
             self.overlay.set_state("target_changed", status=error, hint="可复制或重新插入到原窗口")
@@ -1013,6 +1029,8 @@ class VoiceInputApp:
             self._rerun_refine(payload)
         elif action == "review_deep":
             self._rerun_refine(payload, level="deep")
+        elif action == "review_refine_all":
+            self._refine_all()
         elif action == "review_refine_selection":
             self._refine_selection()
 
@@ -1021,7 +1039,7 @@ class VoiceInputApp:
         if session is None:
             return
         segments = [s for s in session.segments if s.commit_status != "committed"]
-        text = compose_text(segments)
+        text = self.review_ui.get_text() if self.review_ui and self.review_ui.visible else compose_text(segments)
         if not text:
             if self.review_ui:
                 self.review_ui.set_status("没有待插入的文字")
@@ -1049,7 +1067,9 @@ class VoiceInputApp:
         session = self.session
         if not session:
             return
-        text = compose_text([s for s in session.segments if s.commit_status != "committed"]) or compose_text(session.segments)
+        text = self.review_ui.get_text() if self.review_ui and self.review_ui.visible else compose_text(
+            [s for s in session.segments if s.commit_status != "committed"]
+        ) or compose_text(session.segments)
         if text:
             clipboard.set_text(text)
             if self.review_ui:
@@ -1140,10 +1160,10 @@ class VoiceInputApp:
         if not self.review_ui or not self.session:
             return
         selection = self.review_ui.current_selection()
-        seg = self.review_ui._current_segment()
-        if not selection or seg is None:
+        if not selection or not self.session or not self.session.segments:
             self.review_ui.set_status("请先在文本中选择要精修的片段")
             return
+        seg = self.session.segments[-1]
         text, _start, _end = selection
         self.review_ui.set_status("正在精修选中内容…")
 
@@ -1179,19 +1199,75 @@ class VoiceInputApp:
         if self.session and self.review_ui:
             if self.overlay:
                 self.overlay.hide()
+            segments = self._review_segments(self.session)
             self.review_ui.show(
-                self.session.segments,
+                compose_text(segments),
+                compose_text(segments, original=True),
                 model_status=self._llm_label(),
-                status="可编辑、重新识别或重新精修",
+                status="可直接编辑；需要时点“精修全文”，或对比原文后复制",
             )
 
-    def open_diff(self, segment: Segment | None = None) -> None:
-        if not self.diff_ui:
+    def _review_segments(self, session: Session | None = None) -> list[Segment]:
+        session = session or self.session
+        if session is None:
+            return []
+        return [s for s in session.segments if s.commit_status != "committed"]
+
+    def _refine_all(self) -> None:
+        session = self.session
+        if session is None or not self.review_ui:
             return
-        if segment is None and self.review_ui:
-            segment = self.review_ui._current_segment()
-        if segment is not None:
-            self.diff_ui.show(segment)
+        text = self.review_ui.get_text().strip()
+        if not text:
+            self.review_ui.set_status("没有可精修的文字")
+            return
+        if not self.llm_server.available:
+            self.review_ui.set_status("本地 LLM 不可用，已保留原文")
+            return
+        original = compose_text(self._review_segments(session), original=True)
+        self.review_ui.set_status("正在精修全文…")
+        thread = threading.Thread(
+            target=self._refine_all_worker,
+            args=(text, original),
+            daemon=True,
+        )
+        thread.start()
+
+    def _refine_all_worker(self, text: str, original: str) -> None:
+        try:
+            from .guard import check_refinement
+
+            result = self.refiner.refine(
+                segment_id="review-all",
+                source_revision=0,
+                text=text,
+                context=[],
+                level=str((self.cfg.get("refine", {}) or {}).get("level", "standard")),
+                protected_terms=self.terminology.protected,
+            )
+            if not result.ok:
+                self._post("review_refine_failed", message=f"精修失败：{result.error}")
+                return
+            guard = check_refinement(
+                text,
+                result.text,
+                result.edits,
+                protected_terms=self.terminology.protected,
+                level=str((self.cfg.get("refine", {}) or {}).get("level", "standard")),
+            )
+            if not guard.ok:
+                self._post("review_refine_failed", message="精修未通过语义保护，已保留原文")
+                return
+            self._post("review_refined_all", text=result.text, original=original)
+        except Exception as exc:
+            log.warning("全文精修失败：%s", exc)
+            self._post("review_refine_failed", message=f"精修失败：{exc}")
+
+
+    def open_diff(self, segment: Segment | None = None) -> None:
+        if not self.diff_ui or segment is None:
+            return
+        self.diff_ui.show(segment)
 
     def _apply_diff(self, payload) -> None:
         try:

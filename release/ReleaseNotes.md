@@ -1,4 +1,4 @@
-# Release Notes — LocalVoiceInput 1.1.0
+# Release Notes — LocalVoiceInput 1.2.0
 
 发布日期：2026-10-20
 
@@ -6,18 +6,19 @@
 
 | 文件 | 大小 | SHA-256 |
 |---|---:|---|
-| LocalVoiceInput-Setup-x64.exe | 1546.5 MB | `54c5b0e2e385f2dcdb66683d165a9a243c4084a15f636eba8eac266801d24165` |
-| LocalVoiceInput-Portable-x64.zip | 1768.2 MB | `209ca7c6c0dc7e70c70c0f2f78ae8cf1fb91ba5b29a42026d3596f68dbe533e0` |
-| LocalVoiceInput-Update-x64.exe（增量，不含模型） | 42.8 MB | `1a15ac2d8d67632a577cb92720a398f94ab81d0b2f4e6039ae51bf21da47629f` |
-| update.json（签名更新清单） | 1.1 KB | `dd0415da164b63001d3f2d14b11d383c30dc861b69d9f6186a560c4f6b7e17f2` |
+| LocalVoiceInput-Setup-x64.exe | 1546.5 MB | `75c67215e76ffe0fbd9d10a024b4839adc2319508756649b8bb9f675026f401a` |
+| LocalVoiceInput-Portable-x64.zip | 1768.2 MB | `9d8626244c4bbb1778a23c127195ee393af88f923e69ec489bd77e4df80c1382` |
+| LocalVoiceInput-Update-x64.exe（增量，不含模型） | 42.8 MB | `0ca2093ae4a65af759b0561f39db8d42922db844637eb2e404ada41794ea1528` |
+| update.json（签名更新清单） | 1.1 KB | `d22520240696ee1a84a7d11d80d3ada796be5ea2f9b797b099e5ed098ba85a70` |
 
 ## 本轮增强
 
-- 模型集版本校验（`model-set.txt` + manifest），应用与增量安装器双重校验。
-- Ed25519 签名更新清单；托盘「检查更新…」下载、校验、退出后安装。
-- 无模型增量更新包（约 43 MB），复用已安装模型。
-- 输入兼容矩阵：Windows Terminal / 经典控制台 / 普通编辑框选择不同粘贴方式；管理员权限提前提示。
-- 精修「差异对照」：原文/精修逐字高亮，支持逐条接受/拒绝 LLM 修改。
+- **整理结果面板改为单一全文**：所有片段自动合并，不再显示左侧片段列表，编辑区占满窗口。
+- **由用户决定是否精修**：默认直接显示合并文本；点「精修全文」才调用本地 LLM。
+- **对比原文**：只读左右对照，红色删除、绿色新增；不打断编辑。
+- **操作精简**：只保留「精修全文 / 对比原文 / 恢复原文」和「插入 / 复制 / 关闭」。
+- **手动编辑优先**：插入与复制均使用编辑框当前全文；片段更新不会覆盖已编辑内容。
+- 保留模型集校验、Ed25519 签名更新、终端兼容与安全上屏。
 
 ## 亮点
 

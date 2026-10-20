@@ -28,7 +28,7 @@ voiceinput/
   terminology.py    用户词库与受保护术语
   llm.py            llama.cpp 子进程管理、Qwen3.5 精修、JSON 协议、看门狗
   guard.py          语义保护规则（数字、否定、不确定性、英文词、长度）
-  refinement.py     片段版本、精修流水线、单 worker 调度、过期任务丢弃、逐条修改决策
+  refinement.py     片段版本、精修流水线、单 worker 调度、过期任务丢弃、全文合并/逐条修改决策
   compat.py         Windows 输入目标兼容矩阵（终端/控制台/普通编辑框/Unicode）
   update.py         签名更新清单、下载校验、退出后安装
   target.py         前台窗口/焦点控件捕获与恢复、管理员权限检测

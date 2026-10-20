@@ -42,25 +42,30 @@ def test_review_window_buttons_and_edit():
 
     from voiceinput.config import load_config
     from voiceinput.overlay import ReviewWindow
-    from voiceinput.refinement import Segment
 
     commands = []
     root = tk.Tk()
     root.withdraw()
     try:
         window = ReviewWindow(root, load_config(), lambda action, payload: commands.append(action))
-        segment = Segment(id="s1", index=1, raw_asr="测试文本")
-        segment.reviewed_asr = "测试文本"
-        segment.normalized = "测试文本"
-        segment.refined = "测试文本"
-        window.show([segment])
+        window.show("合并后的完整文本", "原始识别文本")
         root.update()
         assert window.win is not None
-        # 编辑框内容会写入 user_edited，插入时以此为准
+        assert window.get_text() == "合并后的完整文本"
         window.editor.delete("1.0", "end")
         window.editor.insert("1.0", "用户修改")
         window._on_edit()
-        assert segment.user_edited == "用户修改"
+        assert window.get_text() == "用户修改"
+        window.update_texts("片段更新", "原始识别文本")
+        assert window.get_text() == "用户修改"
+        window.update_texts("强制更新", "原始识别文本", force=True)
+        assert window.get_text() == "强制更新"
+        window._restore_original()
+        assert window.get_text() == "原始识别文本"
+        window._open_compare()
+        root.update()
+        assert window.compare is not None
+        assert window.compare.win is not None
         window.replace_selection("x")  # 无选中时安全无操作
     finally:
         root.destroy()
