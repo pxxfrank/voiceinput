@@ -6,8 +6,8 @@
 |---|---:|---|
 | `release/LocalVoiceInput-Setup-x64.exe` | 1546.5 MB | `54c5b0e2e385f2dcdb66683d165a9a243c4084a15f636eba8eac266801d24165` |
 | `release/LocalVoiceInput-Portable-x64.zip` | 1768.2 MB | `209ca7c6c0dc7e70c70c0f2f78ae8cf1fb91ba5b29a42026d3596f68dbe533e0` |
-| `release/LocalVoiceInput-Update-x64.exe` | 42.8 MB | `da2022f644d2f964d3c46f1dfb69c1a4f4318b8e920cf922033d51f567a7b266` |
-| `release/update.json` | 1.1 KB | `49257b7cb659ff8d877f7b8c0a74a15937e28441b4199dbdaafc48461637e7d3` |
+| `release/LocalVoiceInput-Update-x64.exe` | 42.8 MB | `1a15ac2d8d67632a577cb92720a398f94ab81d0b2f4e6039ae51bf21da47629f` |
+| `release/update.json` | 1.1 KB | `dd0415da164b63001d3f2d14b11d383c30dc861b69d9f6186a560c4f6b7e17f2` |
 | `release/SHA256SUMS.txt` | — | 上述两行 |
 
 - 版本：**1.1.0**

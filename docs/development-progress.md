@@ -81,7 +81,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1
 |---|---:|---|
 | `release/LocalVoiceInput-Setup-x64.exe` | 1546.5 MB | `54c5b0e2e385f2dcdb66683d165a9a243c4084a15f636eba8eac266801d24165` |
 | `release/LocalVoiceInput-Portable-x64.zip` | 1768.2 MB | `209ca7c6c0dc7e70c70c0f2f78ae8cf1fb91ba5b29a42026d3596f68dbe533e0` |
-| `release/LocalVoiceInput-Update-x64.exe` | 42.8 MB | `da2022f644d2f964d3c46f1dfb69c1a4f4318b8e920cf922033d51f567a7b266` |
+| `release/LocalVoiceInput-Update-x64.exe` | 42.8 MB | `1a15ac2d8d67632a577cb92720a398f94ab81d0b2f4e6039ae51bf21da47629f` |
 | `release/SHA256SUMS.txt` | — | 上述 + ReleaseNotes |
 
 ## 6. 未解决 / 未验证

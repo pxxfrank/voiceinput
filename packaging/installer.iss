@@ -60,6 +60,9 @@ Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: 
 Source: "..\build\pkg\LocalVoiceInput\*"; DestDir: "{app}"; Excludes: "models\*,models"; Flags: ignoreversion recursesubdirs createallsubdirs
 #ifndef NoModels
 Source: "..\build\pkg\LocalVoiceInput\models\*"; DestDir: "{app}\models"; Flags: ignoreversion recursesubdirs createallsubdirs
+#else
+; 旧版 v1.0.0 没有 model-set.txt；增量包只补 marker，不覆盖 models
+Source: "..\models\model-set.txt"; DestDir: "{app}\models"; Flags: ignoreversion
 #endif
 
 [InstallDelete]
