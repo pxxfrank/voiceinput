@@ -4,7 +4,7 @@
 ; 采用 per-user 安装（无需管理员权限），用户数据与安装目录分离。
 
 #define MyAppName "本地语音输入"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.1.0"
 #define MyAppPublisher "LocalVoiceInput"
 #define MyAppExeName "LocalVoiceInput.exe"
 #define MyAppId "{{8E0C6B2A-5C4B-4F8E-9D2A-7B1C3D4E5F60}"
@@ -85,18 +85,6 @@ Type: filesandordirs; Name: "{app}"
 
 #ifdef NoModels
 [Code]
-function HasFilePattern(const Pattern: String): Boolean;
-var
-  FindRec: TFindRec;
-begin
-  Result := False;
-  if FindFirst(Pattern, FindRec) then
-  begin
-    Result := True;
-    FindClose(FindRec);
-  end;
-end;
-
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   ModelSet: AnsiString;
@@ -122,7 +110,7 @@ begin
       end;
     end;
   end;
-  if not HasFilePattern(ExpandConstant('{app}\models\streaming-asr\*\encoder*.onnx')) then
+  if not FileExists(ExpandConstant('{app}\models\streaming-asr\sherpa-onnx-x-asr-480ms-streaming-zipformer-transducer-zh-en-punct-int8-2026-06-05\encoder.int8.onnx')) then
   begin
     Result := '已安装目录中缺少流式 ASR 模型。请先运行完整版安装包修复。';
     Exit;
@@ -132,7 +120,7 @@ begin
     Result := '已安装目录中缺少复核 ASR 模型。请先运行完整版安装包修复。';
     Exit;
   end;
-  if not HasFilePattern(ExpandConstant('{app}\models\llm\*.gguf')) then
+  if not FileExists(ExpandConstant('{app}\models\llm\Qwen3.5-2B-Q4_K_M.gguf')) then
   begin
     Result := '已安装目录中缺少 LLM 模型。请先运行完整版安装包修复。';
     Exit;

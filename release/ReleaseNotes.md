@@ -1,4 +1,4 @@
-# Release Notes — LocalVoiceInput 1.0.0
+# Release Notes — LocalVoiceInput 1.1.0
 
 发布日期：2026-10-20
 
@@ -6,9 +6,10 @@
 
 | 文件 | 大小 | SHA-256 |
 |---|---:|---|
-| LocalVoiceInput-Setup-x64.exe | 1546.5 MB | `66cf940fa1a31751bbffb4e98cac7c4eb4ddc2ac67d1cf058b1f23509eeedf5b` |
-| LocalVoiceInput-Portable-x64.zip | 1768.2 MB | `f89187dc03d41750a4663a082c1cd4e1b8668a015948ec32aa37bc698e8c4d14` |
-| LocalVoiceInput-Update-x64.exe（增量，不含模型） | 42.8 MB | `022bc413fc90a34f8b5accb4e2a64e347291a80987ee4f40ef5e7282c6621847` |
+| LocalVoiceInput-Setup-x64.exe | 1546.5 MB | `54c5b0e2e385f2dcdb66683d165a9a243c4084a15f636eba8eac266801d24165` |
+| LocalVoiceInput-Portable-x64.zip | 1768.2 MB | `209ca7c6c0dc7e70c70c0f2f78ae8cf1fb91ba5b29a42026d3596f68dbe533e0` |
+| LocalVoiceInput-Update-x64.exe（增量，不含模型） | 42.8 MB | `da2022f644d2f964d3c46f1dfb69c1a4f4318b8e920cf922033d51f567a7b266` |
+| update.json（签名更新清单） | 1.1 KB | `49257b7cb659ff8d877f7b8c0a74a15937e28441b4199dbdaafc48461637e7d3` |
 
 ## 本轮增强
 
@@ -38,7 +39,7 @@
 
 ## 验证摘要
 
-- 单元测试 49 通过；UI 冒烟 2 通过；真实模型集成 2 通过。
+- 单元测试 69 通过；UI 冒烟 3 通过；真实模型集成 2 通过。
 - 安装/卸载、Portable、真实 WAV 上屏、剪贴板恢复、焦点变化保护、非文本剪贴板回退、模型缺失回退、断网审计均实际执行。
 - 未验证：真实物理麦克风、Windows 11、目标 ThinkPad 硬件、3 小时长稳、全新干净虚拟机。
 
