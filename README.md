@@ -55,6 +55,9 @@ $env:VOICEINPUT_RUN_INTEGRATION="1"; .venv\Scripts\python.exe -m pytest tests/te
 # 一键构建（测试 → PyInstaller → 模型整理 → Portable ZIP → Setup.exe → SHA256）
 powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1
 
+# 后续小版本更新（不含模型，复用已安装 models，约 40 MB）
+powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1 -NoModels -SkipZip
+
 # 性能
 .venv\Scripts\python.exe scripts\perf_harness.py
 ```

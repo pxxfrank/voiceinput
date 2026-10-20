@@ -5,11 +5,14 @@
 # 用法：
 #   powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1
 #   ... -SkipTests -NoInstaller
+#   ... -NoModels          # 生成增量更新包（不含模型，复用已安装模型）
+#   ... -NoModels -SkipZip # 只生成 Update.exe
 
 param(
     [switch]$SkipTests,
     [switch]$NoInstaller,
-    [switch]$SkipZip
+    [switch]$SkipZip,
+    [switch]$NoModels
 )
 
 $ErrorActionPreference = "Stop"
@@ -46,18 +49,27 @@ $stage = "build\pkg\LocalVoiceInput"
 if (Test-Path "build\pkg") { Remove-Item "build\pkg" -Recurse -Force }
 New-Item -ItemType Directory -Force $stage | Out-Null
 Copy-Item "dist\LocalVoiceInput\*" $stage -Recurse -Force
-Copy-Item "models" (Join-Path $stage "models") -Recurse -Force
+if (-not $NoModels) {
+    Copy-Item "models" (Join-Path $stage "models") -Recurse -Force
+}
 Copy-Item "licenses" (Join-Path $stage "licenses") -Recurse -Force
 Copy-Item "packaging\README.txt" (Join-Path $stage "README.txt") -Force
 Copy-Item "docs\user-guide.md" (Join-Path $stage "使用说明.md") -Force -ErrorAction SilentlyContinue
 
 Write-Host "== 6/8 发布目录自检 =="
-& (Join-Path $stage "LocalVoiceInput.exe") --diagnose | Out-Host
-if ($LASTEXITCODE -ne 0) { throw "发布目录自检失败（模型缺失或不可用）" }
+if ($NoModels) {
+    if (Test-Path (Join-Path $stage "models")) { throw "增量更新包不应包含 models 目录" }
+    Write-Host "增量更新包：复用目标目录中已有的 models/，跳过模型自检"
+} else {
+    & (Join-Path $stage "LocalVoiceInput.exe") --diagnose | Out-Host
+    if ($LASTEXITCODE -ne 0) { throw "发布目录自检失败（模型缺失或不可用）" }
+}
 
 Write-Host "== 7/8 生成 Portable ZIP =="
 New-Item -ItemType Directory -Force "release" | Out-Null
-if (-not $SkipZip) {
+if ($NoModels) {
+    Write-Host "增量更新包不生成 Portable ZIP（Portable 首次使用必须带模型）"
+} elseif (-not $SkipZip) {
     & $python "scripts\make_zip.py" $stage "release\LocalVoiceInput-Portable-x64.zip"
     if ($LASTEXITCODE -ne 0) { throw "Portable ZIP 生成失败" }
 }
@@ -69,18 +81,24 @@ if (-not $NoInstaller) {
         $iscc = Join-Path $root "tools\innosetup\app\ISCC.exe"
     }
     if (-not (Test-Path $iscc)) { throw "未找到 ISCC.exe；请设置 ISCC 环境变量或安装 Inno Setup" }
-    & $iscc "/Qp" "packaging\installer.iss"
+    $isccArgs = @("/Qp")
+    if ($NoModels) { $isccArgs += "/DNoModels=1" }
+    $isccArgs += "packaging\installer.iss"
+    & $iscc @isccArgs
     if ($LASTEXITCODE -ne 0) { throw "Inno Setup 编译失败" }
 }
 
 Write-Host "== 计算校验值 =="
 $hashes = @()
-foreach ($file in @("release\LocalVoiceInput-Setup-x64.exe", "release\LocalVoiceInput-Portable-x64.zip")) {
+$files = @("release\LocalVoiceInput-Setup-x64.exe", "release\LocalVoiceInput-Portable-x64.zip")
+if ($NoModels) { $files = @("release\LocalVoiceInput-Update-x64.exe", "release\ReleaseNotes.md") }
+foreach ($file in $files) {
     if (Test-Path $file) {
         $h = (Get-FileHash $file -Algorithm SHA256).Hash.ToLower()
         $hashes += "$h  $([IO.Path]::GetFileName($file))"
         Write-Host "$file  $h"
     }
 }
-$hashes | Set-Content "release\SHA256SUMS.txt" -Encoding ASCII
-Write-Host "构建完成：release\"
+$sumFile = if ($NoModels) { "release\SHA256SUMS-update.txt" } else { "release\SHA256SUMS.txt" }
+$hashes | Set-Content $sumFile -Encoding ASCII
+Write-Host "构建完成：release\ $(if ($NoModels) { '（增量更新包）' } else { '' })"

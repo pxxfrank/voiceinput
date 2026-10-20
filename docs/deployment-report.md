@@ -84,7 +84,33 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1
 .venv\Scripts\python.exe -m voiceinput.download_models --verify
 ```
 
-## 5. 实际部署验证
+## 5. 增量更新包（不含模型）
+
+已支持“首次安装带模型、后续更新不带模型”的构建方式：
+
+```powershell
+# 完整安装包（含全部模型，用于首次安装/修复）
+powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1
+
+# 增量更新包（不含 models，复用已安装模型）
+powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1 -NoModels -SkipZip
+```
+
+产物：
+
+- `release\LocalVoiceInput-Setup-x64.exe`：完整包（约 1.5 GB）
+- `release\LocalVoiceInput-Update-x64.exe`：增量包（当前约 **40 MB**）
+- `release\SHA256SUMS-update.txt`：增量包校验值
+
+增量安装器在 `PrepareToInstall` 中检查目标目录已有的
+`models\manifest.json`、流式 ASR、复核 ASR、LLM GGUF 与 llama-server；
+缺失时中止并提示先安装完整包。Inno Setup 升级不会删除新安装包中未列出的旧文件，
+因此 `models\` 会保留；卸载仍会删除整个安装目录（含模型）。
+
+> 首次安装、卸载后重装、模型版本升级仍需使用完整包。
+> 增量包只适用于“已安装完整版且模型未变”的升级场景。
+
+## 6. 实际部署验证
 
 | 步骤 | 结果 |
 |---|---|
@@ -101,7 +127,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1
 | Portable ZIP 完整性 | `testzip` 无错误 |
 | Portable 解压运行 | 退出 0，`portable=True`，数据在 `data\` |
 
-## 6. 未完成/风险
+## 7. 未完成/风险
 
 - 未在全新 Windows 11 虚拟机（无 Python/.NET/VC++/Ollama）上安装验证；安装包自包含，但该环境验收未执行。
 - 未在目标 ThinkPad 硬件上验证。
@@ -109,7 +135,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1
 - 安装器为 per-user，不使用 `Program Files`；符合无管理员场景，但与“Program Files”建议路径不同。
 - 安装包约 1.5 GB，主要来自 Qwen3.5-2B（1.22 GB）与两个 ASR 模型（约 0.4 GB）。
 
-## 7. 回滚
+## 8. 回滚
 
 - 重新运行旧版本 Setup 即可覆盖安装；用户数据保留。
 - 卸载不会删除用户数据；如需完全清除，手动删除 `%LOCALAPPDATA%\LocalVoiceInput`。
