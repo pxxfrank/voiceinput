@@ -37,7 +37,7 @@ print(base64.b64encode(
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1
-powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1 -NoModels -SkipZip
+powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1 -NoModels
 ```
 
 2. 生成签名更新清单：
