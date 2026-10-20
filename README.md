@@ -3,6 +3,11 @@
 Windows 11 x64 本地离线语音输入法：流式识别、识别复核、本地 LLM 精修、全局安全上屏。
 **不联网、不上传录音或文字**；安装包内置全部运行时与模型。
 
+## 下载
+
+- [GitHub Releases · v1.1.0](https://github.com/pxxfrank/voiceinput/releases/tag/v1.1.0)
+- 首次安装用完整 `LocalVoiceInput-Setup-x64.exe`；已安装用户增量更新用 `LocalVoiceInput-Update-x64.exe`（不含模型，约 43 MB）。
+
 ## 直接使用
 
 1. 双击 `release\LocalVoiceInput-Setup-x64.exe`，按向导安装（per-user，无需管理员）。

@@ -11,6 +11,8 @@
 | `release/SHA256SUMS.txt` | — | 上述两行 |
 
 - 版本：**1.1.0**
+- Release：<https://github.com/pxxfrank/voiceinput/releases/tag/v1.1.0>
+- 更新清单：<https://github.com/pxxfrank/voiceinput/releases/latest/download/update.json>
 - 安装器：Inno Setup 7.1.0
 - 发布模式：自包含（PyInstaller onedir + Python 3.14.5 + native DLL + 模型）
 
