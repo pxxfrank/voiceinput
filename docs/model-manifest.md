@@ -1,7 +1,14 @@
 # 模型清单与来源
 
-清单文件：`models/manifest.json`（45 个文件，含每个文件的 size + SHA-256）。
+清单文件：`models/manifest.json`（46 个文件，含每个文件的 size + SHA-256）。
 运行期启动只做存在性/大小检查；完整 SHA-256 校验由 `--verify-models` 或设置页“校验模型”执行。
+
+## 模型集版本
+
+- `models/model-set.txt`：`2026-10-20.1`
+- `models/manifest.json` 的 `model_set` 字段同值。
+- 应用与增量安装器都校验该值；不匹配会拒绝启动识别/拒绝安装增量包。
+- 模型集变化时必须提升该值，并发布完整安装包；增量包不能替代模型升级。
 
 ## 1. 流式主 ASR
 

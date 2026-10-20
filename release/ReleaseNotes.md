@@ -6,8 +6,17 @@
 
 | 文件 | 大小 | SHA-256 |
 |---|---:|---|
-| LocalVoiceInput-Setup-x64.exe | 1543.7 MB | `d57e511e08a41395e19ab32935ab2d22e6e44c7bc5965432dd9db325e2d3dde0` |
-| LocalVoiceInput-Portable-x64.zip | 1758.7 MB | `c96adf4c39f8ac1422546b12ddbfcbd9ac75cb5c648260a9fa833014d8efd33e` |
+| LocalVoiceInput-Setup-x64.exe | 1546.5 MB | `66cf940fa1a31751bbffb4e98cac7c4eb4ddc2ac67d1cf058b1f23509eeedf5b` |
+| LocalVoiceInput-Portable-x64.zip | 1768.2 MB | `f89187dc03d41750a4663a082c1cd4e1b8668a015948ec32aa37bc698e8c4d14` |
+| LocalVoiceInput-Update-x64.exe（增量，不含模型） | 42.8 MB | `022bc413fc90a34f8b5accb4e2a64e347291a80987ee4f40ef5e7282c6621847` |
+
+## 本轮增强
+
+- 模型集版本校验（`model-set.txt` + manifest），应用与增量安装器双重校验。
+- Ed25519 签名更新清单；托盘「检查更新…」下载、校验、退出后安装。
+- 无模型增量更新包（约 43 MB），复用已安装模型。
+- 输入兼容矩阵：Windows Terminal / 经典控制台 / 普通编辑框选择不同粘贴方式；管理员权限提前提示。
+- 精修「差异对照」：原文/精修逐字高亮，支持逐条接受/拒绝 LLM 修改。
 
 ## 亮点
 

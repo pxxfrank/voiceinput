@@ -8,6 +8,7 @@
 #define MyAppPublisher "LocalVoiceInput"
 #define MyAppExeName "LocalVoiceInput.exe"
 #define MyAppId "{{8E0C6B2A-5C4B-4F8E-9D2A-7B1C3D4E5F60}"
+#define RequiredModelSet "2026-10-20.1"
 
 #ifdef NoModels
 #define MyOutputBase "LocalVoiceInput-Update-x64"
@@ -97,6 +98,8 @@ begin
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ModelSet: AnsiString;
 begin
   Result := '';
   if not FileExists(ExpandConstant('{app}\models\manifest.json')) then
@@ -104,6 +107,20 @@ begin
     Result := '未找到已安装的模型。' + #13#10 +
               '请先安装完整版 LocalVoiceInput-Setup-x64.exe，或把模型放回安装目录的 models 文件夹。';
     Exit;
+  end;
+  if FileExists(ExpandConstant('{app}\models\model-set.txt')) then
+  begin
+    if LoadStringFromFile(ExpandConstant('{app}\models\model-set.txt'), ModelSet) then
+    begin
+      if Trim(String(ModelSet)) <> '{#RequiredModelSet}' then
+      begin
+        Result := '已安装的模型集版本不匹配。' + #13#10 +
+                  '需要：{#RequiredModelSet}' + #13#10 +
+                  '实际：' + Trim(String(ModelSet)) + #13#10 +
+                  '请安装本次发布的完整版安装包以更新模型。';
+        Exit;
+      end;
+    end;
   end;
   if not HasFilePattern(ExpandConstant('{app}\models\streaming-asr\*\encoder*.onnx')) then
   begin

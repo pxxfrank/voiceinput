@@ -34,6 +34,7 @@ def collect(cfg: dict[str, Any] | None = None, *, load_test: bool = False) -> di
         "database": str(paths.database_path()),
         "models": [c.to_dict() for c in checks],
         "models_ok": all(c.ok for c in checks),
+        "model_set": modelstore.model_set_status().to_dict(),
         "devices": list_input_devices(),
         "memory_mb": _memory_mb(),
         "hotkey": cfg.get("hotkey", {}),
@@ -89,6 +90,9 @@ def format_text(report: dict[str, Any]) -> str:
         f"数据目录: {report['data_dir']}  (portable={report['portable']})",
         f"模式: {report['mode']}  热键: {report['hotkey'].get('key')} / {report['hotkey'].get('mode')}",
         f"进程内存: {report['memory_mb']} MB",
+        f"模型集: {report.get('model_set', {}).get('actual') or '未知'} "
+        f"(需要 {report.get('model_set', {}).get('required')}, "
+        f"{'匹配' if report.get('model_set', {}).get('compatible') else '不匹配'})",
         "",
         "模型:",
     ]

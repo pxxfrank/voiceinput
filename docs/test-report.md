@@ -8,8 +8,8 @@
 
 | 类型 | 命令 | 结果 |
 |---|---|---|
-| 单元测试 | `python -m pytest tests -q` | **49 passed** |
-| UI 冒烟（Tk） | `VOICEINPUT_UI_TESTS=1 python -m pytest tests/test_ui_smoke.py -q` | **2 passed** |
+| 单元测试 | `python -m pytest tests -q` | **69 passed** |
+| UI 冒烟（Tk） | `VOICEINPUT_UI_TESTS=1 python -m pytest tests/test_ui_smoke.py -q` | **3 passed** |
 | 真实模型集成 | `VOICEINPUT_RUN_INTEGRATION=1 python -m pytest tests/test_integration_real.py -q` | **2 passed**（24.3 s） |
 | 真实音频自检 | `python -m voiceinput --selftest --llm-test` | 通过（流式/复核/LLM 均输出真实文本） |
 | 断网审计 | `python tests/offline_run.py --selftest --wav ... --llm-test` | 通过，外部网络尝试：无 |
@@ -31,7 +31,11 @@
 | `test_storage.py` | 历史限制、词库 upsert/delete、onboarded、会话统计 |
 | `test_refinement.py` | 忠实档不调 LLM、用户编辑优先、过期结果丢弃、守门回退、JSON 解析 |
 | `test_input.py` | 目标缺失/失效/变化、重复提交幂等、载荷空格/换行、撤销无记录 |
-| `test_ui_smoke.py` | 悬浮窗按钮状态与命令、精修面板编辑写入 |
+| `test_ui_smoke.py` | 悬浮窗按钮、精修面板编辑、差异对照面板 |
+| `test_compat.py` | 终端/Windows Terminal/经典控制台/普通编辑框输入策略 |
+| `test_diff.py` | 逐条接受/拒绝修改、字符级 diff |
+| `test_update.py` | 签名更新清单校验、版本比较、篡改拒绝 |
+| `test_model_set.py` | 模型集 marker/manifest 匹配、旧版兼容、不匹配拒绝 |
 
 ## 3. 端到端（E2E）证据
 
@@ -87,8 +91,20 @@
 | 剪贴板含图片（非文本格式） | 检测到 `complete=False`，改用 Unicode 直输；**原图片剪贴板保留**，文字成功输入 |
 | 目标窗口关闭 | 拒绝提交，保留文字 |
 | 目标焦点变化 | 拒绝自动提交，保留文字 |
+| 管理员权限目标 | 提前检测 UIPI 并提示以管理员运行 |
+| 终端兼容 | 单元测试验证 Windows Terminal/经典控制台选择不同粘贴快捷键 |
 | 重复提交 | `commit_status=committed` 后幂等 |
 | 撤销 | 无记录时提示；60 秒窗口；不对 partial 做无限退格 |
+
+## 4.1 更新与精修审阅专项
+
+| 测试 | 结果 |
+|---|---|
+| Ed25519 签名清单 | 通过；篡改版本后签名校验失败 |
+| 版本比较/无更新 | 通过 |
+| 模型集不匹配 | 应用启动拒绝加载；增量安装器拒绝安装 |
+| 逐条接受/拒绝修改 | 通过；全部接受保留 LLM 文本，拒绝回退到原文/部分应用 |
+| 差异高亮 | 通过；左右文本由字符级 diff 生成 |
 
 ## 5. 安装/卸载
 

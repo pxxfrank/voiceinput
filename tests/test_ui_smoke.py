@@ -64,3 +64,32 @@ def test_review_window_buttons_and_edit():
         window.replace_selection("x")  # 无选中时安全无操作
     finally:
         root.destroy()
+
+
+def test_diff_window_renders_edits():
+    import tkinter as tk
+
+    from voiceinput.config import load_config
+    from voiceinput.overlay import DiffWindow
+    from voiceinput.refinement import Segment
+
+    commands = []
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        window = DiffWindow(root, load_config(), lambda action, payload: commands.append(action))
+        segment = Segment(id="s1", index=1, raw_asr="原文 A")
+        segment.normalized = "原文 A"
+        segment.refined = "原文 X"
+        segment.edits = [{"source": "A", "replacement": "X", "reason": "test"}]
+        segment.edit_decisions = [True]
+        window.show(segment)
+        root.update()
+        assert len(window.tree.get_children()) == 1
+        assert window.left.get("1.0", "end-1c").strip() == "原文 A"
+        window.set_all(False)
+        root.update()
+        assert commands and commands[-1] == "diff_apply"
+    finally:
+        root.destroy()
+

@@ -77,6 +77,7 @@ DEFAULTS: dict[str, Any] = {
         "append_newline": False,
         "verify_target": True,
         "type_fallback": True,
+        "compat_mode": "auto",  # auto | paste | type
     },
     "ui": {
         "theme": "dark",  # dark | light | system
@@ -92,6 +93,10 @@ DEFAULTS: dict[str, Any] = {
     "feedback": {"beep": True, "tray": True},
     "logging": {"level": "INFO", "max_mb": 2, "backups": 3},
     "auto": {"smart_after_seconds": 20.0},
+    "update": {
+        "manifest_url": "https://github.com/pxxfrank/voiceinput/releases/latest/download/update.json",
+        "auto_check": False,
+    },
     "replacements": {},
 }
 
@@ -235,12 +240,14 @@ def _normalize(cfg: dict[str, Any]) -> dict[str, Any]:
 
     out = cfg.setdefault("output", {})
     out["method"] = out.get("method") if out.get("method") in ("paste", "type") else "paste"
+    out["compat_mode"] = out.get("compat_mode") if out.get("compat_mode") in ("auto", "paste", "type") else "auto"
 
     cfg.setdefault("feedback", {})
     cfg.setdefault("logging", {})
     cfg.setdefault("history", {})
     cfg.setdefault("terminology", {})
     cfg.setdefault("auto", {})
+    cfg.setdefault("update", {})
     return cfg
 
 

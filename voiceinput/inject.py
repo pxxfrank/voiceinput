@@ -12,8 +12,8 @@ from typing import Any, Callable
 
 import keyboard
 
-from . import clipboard
-from .target import WindowTarget, focus_target
+from . import clipboard, compat
+from .target import WindowTarget, current_process_elevated, focus_target
 
 log = logging.getLogger("voiceinput.input")
 
@@ -105,6 +105,7 @@ class InputTransaction:
     id: str = field(default_factory=lambda: "tx_" + uuid.uuid4().hex[:12])
     status: str = "prepared"  # prepared | committed | failed | target_changed | cancelled
     method: str = ""
+    strategy: str = ""
     error: str = ""
     warning: str = ""
     created_at: float = field(default_factory=time.time)
@@ -120,6 +121,7 @@ class InputTransaction:
             "id": self.id,
             "status": self.status,
             "method": self.method,
+            "strategy": self.strategy,
             "error": self.error,
             "warning": self.warning,
             "target": self.target.to_dict() if self.target else None,
@@ -140,6 +142,8 @@ class TextInsertionService:
         self.append_newline = bool(output.get("append_newline", False))
         self.verify_target = bool(output.get("verify_target", True))
         self.type_fallback = bool(output.get("type_fallback", True))
+        self.compat_mode = str(output.get("compat_mode", "auto") or "auto")
+        self.current_elevated = current_process_elevated()
         self.last_transaction: InputTransaction | None = None
         self.history: list[InputTransaction] = []
 
@@ -165,6 +169,8 @@ class TextInsertionService:
             return False, "无法确定输入目标，请先点击目标输入框后重试。"
         if not tx.target.is_alive():
             return False, "目标窗口已关闭，文字已保留。"
+        if getattr(tx.target, "elevated", False) and not self.current_elevated:
+            return False, "目标窗口以管理员权限运行，当前程序权限不足；请以管理员身份运行本程序后重试。"
         if not tx.target.is_current():
             # 自动提交绝不抢焦点；只有用户显式确认“插入到原窗口”才恢复焦点
             if allow_focus_restore and focus_target(tx.target):
@@ -192,7 +198,9 @@ class TextInsertionService:
             log.warning("提交被拒绝：%s", error)
             return tx
 
-        method = self.method
+        strategy = compat.resolve(tx.target, self.compat_mode)
+        tx.strategy = strategy.name
+        method = "type" if strategy.prefer_unicode else self.method
         snap = None
         seq = None
         try:
@@ -221,7 +229,7 @@ class TextInsertionService:
                             return tx
                     else:
                         time.sleep(0.03)
-                        keyboard.send("ctrl+v")
+                        keyboard.send(strategy.paste_shortcut or "ctrl+v")
                         time.sleep(0.16)
 
             if method == "type":

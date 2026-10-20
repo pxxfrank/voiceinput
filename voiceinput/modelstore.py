@@ -53,6 +53,57 @@ def sha256_file(path: Path, chunk: int = 1024 * 1024) -> str:
     return digest.hexdigest()
 
 
+@dataclass
+class ModelSetStatus:
+    actual: str
+    required: str
+    compatible: bool
+    source: str
+    message: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "actual": self.actual,
+            "required": self.required,
+            "compatible": self.compatible,
+            "source": self.source,
+            "message": self.message,
+        }
+
+
+def model_set_marker_path() -> Path:
+    return paths.models_dir() / "model-set.txt"
+
+
+def model_set_status() -> ModelSetStatus:
+    """校验应用所需模型集与安装目录模型集是否配套。
+
+    兼容旧版：v1.0.0 的 models 缺少 model-set.txt，但模型文件相同；
+    此时按当前所需模型集兼容处理（仅一次迁移），后续版本必须带 marker。
+    """
+    required = paths.MODEL_SET
+    marker = model_set_marker_path()
+    manifest = load_manifest()
+    manifest_set = str(manifest.get("model_set", "") or "").strip()
+    if marker.exists():
+        actual = marker.read_text(encoding="ascii", errors="ignore").strip()
+        source = "model-set.txt"
+    elif manifest_set:
+        actual = manifest_set
+        source = "manifest.json"
+    else:
+        actual = ""
+        source = "legacy"
+    compatible = actual == required
+    message = ""
+    if not compatible and not actual and manifest.get("models"):
+        compatible = True
+        message = "旧版模型集（无 model-set.txt），按当前版本兼容处理"
+    elif not compatible:
+        message = f"模型集不匹配：需要 {required}，实际 {actual or '未知'}"
+    return ModelSetStatus(actual=actual, required=required, compatible=compatible, source=source, message=message)
+
+
 def _search(root: Path, predicate) -> Path | None:
     if not root.exists():
         return None

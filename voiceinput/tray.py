@@ -42,6 +42,7 @@ class TrayController:
         on_open_onboarding: Optional[Callable[[], None]] = None,
         on_undo: Optional[Callable[[], None]] = None,
         on_restart: Optional[Callable[[], None]] = None,
+        on_check_update: Optional[Callable[[], None]] = None,
     ) -> None:
         self._on_quit = on_quit
         self._on_open_settings = on_open_settings
@@ -51,6 +52,7 @@ class TrayController:
         self._on_open_onboarding = on_open_onboarding
         self._on_undo = on_undo
         self._on_restart = on_restart
+        self._on_check_update = on_check_update
         self._info_lines: list[str] = []
         self._icon = pystray.Icon(
             "LocalVoiceInput",
@@ -92,6 +94,8 @@ class TrayController:
         if self._on_open_onboarding:
             items.append(pystray.MenuItem("首次引导…", lambda: self._on_open_onboarding()))
         items.append(pystray.Menu.SEPARATOR)
+        if self._on_check_update:
+            items.append(pystray.MenuItem("检查更新…", lambda: self._on_check_update()))
         if self._on_restart:
             items.append(pystray.MenuItem("重启程序", lambda: self._on_restart()))
         items.append(pystray.MenuItem("退出", lambda: self._on_quit()))

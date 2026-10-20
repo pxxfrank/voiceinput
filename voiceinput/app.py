@@ -10,13 +10,17 @@ import sys
 import threading
 import time
 import tkinter as tk
+import webbrowser
+from tkinter import messagebox
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
 import keyboard
 
-from . import clipboard, paths
+from . import clipboard, modelstore, paths
+from . import update as update_mod
 from .asr_merge import merge_stream_review
 from .audio import TARGET_SR, AudioCapture
 from .config import load_config, save_config
@@ -25,11 +29,12 @@ from .engines import OfflineReviewer
 from .hotkey import PushToTalk
 from .inject import InputTransaction, TextInsertionService
 from .llm import LlamaServer, Refiner
-from .overlay import OverlayWindow, ReviewWindow
+from .overlay import DiffWindow, OverlayWindow, ReviewWindow
 from .refinement import (
     RefinementPipeline,
     RefinementScheduler,
     Segment,
+    apply_edit_decisions,
     build_context,
     compose_text,
 )
@@ -97,6 +102,7 @@ class VoiceInputApp:
         self.root: tk.Tk | None = None
         self.overlay: OverlayWindow | None = None
         self.review_ui: ReviewWindow | None = None
+        self.diff_ui: DiffWindow | None = None
         self.tray = None
         self._capture: AudioCapture | None = None
         self._feed_stop = threading.Event()
@@ -113,6 +119,7 @@ class VoiceInputApp:
         self._pending_text = ""
         self._last_voice_at = 0.0
         self._hide_after_id = None
+        self._update_busy = False
 
     # ------------------------------------------------------------------ #
     # 生命周期
@@ -125,6 +132,7 @@ class VoiceInputApp:
             self.root, self.cfg, self._on_ui_command, self._on_position
         )
         self.review_ui = ReviewWindow(self.root, self.cfg, self._on_ui_command)
+        self.diff_ui = DiffWindow(self.root, self.cfg, self._on_ui_command)
         self._register_hotkeys()
         self._start_tray()
         threading.Thread(target=self._load_models, name="model-loader", daemon=True).start()
@@ -208,6 +216,7 @@ class VoiceInputApp:
                 on_open_onboarding=lambda: self._post("open_onboarding"),
                 on_undo=lambda: self._post("undo"),
                 on_restart=lambda: self._post("restart"),
+                on_check_update=lambda: self._post("check_update"),
             )
             threading.Thread(target=self.tray.run, name="tray", daemon=True).start()
         except Exception as exc:
@@ -265,6 +274,12 @@ class VoiceInputApp:
     # ------------------------------------------------------------------ #
     def _load_models(self) -> None:
         self._post("status", state="loading", text="正在加载语音识别模型…")
+        model_set = modelstore.model_set_status()
+        log.info("模型集：%s（需要 %s，来源 %s）", model_set.actual or "无", model_set.required, model_set.source)
+        if not model_set.compatible:
+            self._model_errors.append(model_set.message)
+            self._post("fatal_model", text=model_set.message + "；请安装与当前版本配套的完整安装包。")
+            return
         try:
             self.streaming = StreamingAsr(self.cfg)
             self._post("status", state="loading", text="流式模型就绪，正在加载复核模型…")
@@ -393,6 +408,16 @@ class VoiceInputApp:
             self.quit()
         elif kind == "restart":
             self.request_restart()
+        elif kind == "check_update":
+            self._check_updates()
+        elif kind == "update_result":
+            self._on_update_result(event.get("result"), bool(event.get("silent")))
+        elif kind == "update_progress":
+            self._on_update_progress(float(event.get("progress", 0.0)))
+        elif kind == "update_downloaded":
+            self._on_update_downloaded(Path(event.get("path", "")))
+        elif kind == "update_error":
+            self._on_update_error(str(event.get("message", "更新失败")))
 
     def _on_models_ready(self) -> None:
         errors = self._model_errors
@@ -418,6 +443,8 @@ class VoiceInputApp:
         if self.feed_wav and not errors:
             delay = int((self.session_delay + 0.6) * 1000)
             self.root.after(delay, lambda: self.start_session("wav"))  # type: ignore[union-attr]
+        if (self.cfg.get("update", {}) or {}).get("auto_check") and not self.feed_wav:
+            self.root.after(3000, lambda: self._check_updates(silent=True))  # type: ignore[union-attr]
 
     def _hint(self) -> str:
         if not self._ptt:
@@ -645,6 +672,8 @@ class VoiceInputApp:
         self._feeder = None
         if self.review_ui and self.review_ui.visible:
             self.review_ui.hide()
+        if self.diff_ui:
+            self.diff_ui.hide()
         if cancelled:
             if self.overlay:
                 self.overlay.set_state("idle", status="已取消", hint="", mode=self._mode_text())
@@ -968,8 +997,14 @@ class VoiceInputApp:
         elif action == "review_close":
             if self.review_ui:
                 self.review_ui.hide()
+            if self.diff_ui:
+                self.diff_ui.hide()
             if self.state == "review" and self.session:
                 self._end_session(self.session, cancelled=True)
+        elif action == "review_diff":
+            self.open_diff(payload)
+        elif action == "diff_apply":
+            self._apply_diff(payload)
         elif action == "review_restore":
             self._restore_original(payload)
         elif action == "review_rerecognize":
@@ -1150,6 +1185,26 @@ class VoiceInputApp:
                 status="可编辑、重新识别或重新精修",
             )
 
+    def open_diff(self, segment: Segment | None = None) -> None:
+        if not self.diff_ui:
+            return
+        if segment is None and self.review_ui:
+            segment = self.review_ui._current_segment()
+        if segment is not None:
+            self.diff_ui.show(segment)
+
+    def _apply_diff(self, payload) -> None:
+        try:
+            segment, decisions = payload
+            apply_edit_decisions(segment, list(decisions))
+        except Exception as exc:
+            log.warning("应用差异决策失败：%s", exc)
+            return
+        if self.review_ui:
+            self.review_ui.refresh()
+        if self.diff_ui:
+            self.diff_ui.refresh()
+
     def _llm_label(self) -> str:
         status = self.llm_server.status()
         if status.get("running"):
@@ -1217,6 +1272,114 @@ class VoiceInputApp:
                 self._post("restart")
 
         threading.Thread(target=watch, daemon=True).start()
+
+    # ------------------------------------------------------------------ #
+    # 签名更新
+    # ------------------------------------------------------------------ #
+    def _check_updates(self, silent: bool = False) -> None:
+        if self._update_busy:
+            return
+        self._update_busy = True
+        source = str((self.cfg.get("update", {}) or {}).get("manifest_url", "") or update_mod.DEFAULT_MANIFEST_URL)
+
+        def worker() -> None:
+            try:
+                result = update_mod.check_for_update(paths.VERSION, source)
+            except Exception as exc:
+                result = update_mod.UpdateCheck("error", str(exc))
+            self._post("update_result", result=result, silent=silent)
+
+        threading.Thread(target=worker, name="update-check", daemon=True).start()
+
+    def _on_update_result(self, result, silent: bool = False) -> None:
+        self._update_busy = False
+        if result is None:
+            return
+        if result.status == "current":
+            if not silent:
+                messagebox.showinfo("检查更新", result.message)
+            return
+        if result.status == "error":
+            log.warning("检查更新失败：%s", result.message)
+            if not silent:
+                messagebox.showerror("检查更新", result.message)
+            return
+        if result.status == "model_mismatch":
+            info = result.info
+            message = result.message
+            if info and info.full_installer_url:
+                message += "\n\n是否打开完整安装包下载页面？"
+            if messagebox.askyesno("需要更新模型", message):
+                if info and info.full_installer_url:
+                    webbrowser.open(info.full_installer_url)
+            return
+        if result.status == "available" and result.info:
+            info = result.info
+            note = f"发现新版本 {info.version}（当前 {paths.VERSION}）。\n\n模型集：{info.model_set or '未声明'}\n\n是否现在下载增量更新包？"
+            if messagebox.askyesno("发现新版本", note):
+                self._start_update_download(info)
+
+    def _start_update_download(self, info) -> None:
+        if paths.is_portable():
+            messagebox.showwarning(
+                "便携版更新",
+                "便携版请手动下载新的 Portable ZIP 并替换程序文件；自动安装会写入用户安装目录。",
+            )
+            if info.full_installer_url:
+                webbrowser.open(info.full_installer_url)
+            self._update_busy = False
+            return
+        self._update_busy = True
+        if self.overlay:
+            self.overlay.show("processing")
+            self.overlay.set_state("processing", status="正在下载更新… 0%", hint="", mode=self._mode_text())
+
+        def worker() -> None:
+            last = {"value": 0.0}
+            try:
+                def progress(value: float) -> None:
+                    if value - last["value"] >= 0.02 or value >= 1.0:
+                        last["value"] = value
+                        self._post("update_progress", progress=value)
+
+                path = update_mod.download_update(info, progress=progress)
+                self._post("update_downloaded", path=str(path))
+            except Exception as exc:
+                self._post("update_error", message=str(exc))
+
+        threading.Thread(target=worker, name="update-download", daemon=True).start()
+
+    def _on_update_progress(self, value: float) -> None:
+        percent = max(0, min(100, int(value * 100)))
+        if self.overlay and self.overlay._visible:
+            self.overlay.set_state(
+                "processing", status=f"正在下载更新… {percent}%", hint="下载完成后会提示安装", mode=self._mode_text()
+            )
+        elif self.tray:
+            try:
+                self.tray.set_status("processing", f"本地语音输入 - 下载更新 {percent}%")
+            except Exception:
+                pass
+
+    def _on_update_downloaded(self, path: Path) -> None:
+        self._update_busy = False
+        if self.overlay:
+            self.overlay.hide()
+        if messagebox.askyesno("更新已下载", f"更新包已校验：\n{path}\n\n立即退出并安装？"):
+            try:
+                update_mod.launch_installer_after_exit(path)
+            except Exception as exc:
+                messagebox.showerror("安装更新失败", str(exc))
+                return
+            self.quit()
+        else:
+            messagebox.showinfo("更新已下载", f"已保存到：\n{path}\n\n稍后可手动运行安装。")
+
+    def _on_update_error(self, message: str) -> None:
+        self._update_busy = False
+        if self.overlay:
+            self.overlay.hide()
+        messagebox.showerror("更新失败", message)
 
     def _on_position(self, x: int, y: int) -> None:
         self.cfg.setdefault("ui", {})["position"] = [int(x), int(y)]

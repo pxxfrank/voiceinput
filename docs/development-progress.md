@@ -55,8 +55,8 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1
 
 | 项 | 结果 | 证据 |
 |---|---|---|
-| 单元测试 | 49 passed | 终端输出；`docs/test-report.md` |
-| UI 冒烟（Tk） | 2 passed | `tests/test_ui_smoke.py` |
+| 单元测试 | 69 passed | 终端输出；`docs/test-report.md` |
+| UI 冒烟（Tk） | 3 passed | `tests/test_ui_smoke.py` |
 | 真实模型集成 | 2 passed / 24.3 s | `tests/test_integration_real.py` |
 | 流式 ASR | RTF P50 0.15；首字 P50 968 ms | `docs/perf-results.json` |
 | 复核 ASR | P50 321 ms；超时回退 | 性能报告 |
@@ -70,13 +70,18 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1
 | 非文本剪贴板 | 图片保留，改用 Unicode 直输 | 测试报告 |
 | LLM 缺失 | 回退确定性文本，文本不丢失 | 测试报告 |
 | 断网审计 | 外部网络尝试：无 | `tests/offline_run.py` |
+| 模型集校验 | marker/manifest 匹配、旧版兼容、不匹配拒绝 | `tests/test_model_set.py` |
+| 签名更新 | Ed25519 清单校验、篡改拒绝、版本比较 | `tests/test_update.py` |
+| 输入兼容矩阵 | 终端/控制台/普通编辑框策略 | `tests/test_compat.py` |
+| 精修差异审阅 | 字符级 diff、逐条接受/拒绝 | `tests/test_diff.py` |
 
 ## 5. 最终产物
 
 | 文件 | 大小 | SHA-256 |
 |---|---:|---|
-| `release/LocalVoiceInput-Setup-x64.exe` | 1543.7 MB | `d57e511e08a41395e19ab32935ab2d22e6e44c7bc5965432dd9db325e2d3dde0` |
-| `release/LocalVoiceInput-Portable-x64.zip` | 1758.7 MB | `c96adf4c39f8ac1422546b12ddbfcbd9ac75cb5c648260a9fa833014d8efd33e` |
+| `release/LocalVoiceInput-Setup-x64.exe` | 1546.5 MB | `66cf940fa1a31751bbffb4e98cac7c4eb4ddc2ac67d1cf058b1f23509eeedf5b` |
+| `release/LocalVoiceInput-Portable-x64.zip` | 1768.2 MB | `f89187dc03d41750a4663a082c1cd4e1b8668a015948ec32aa37bc698e8c4d14` |
+| `release/LocalVoiceInput-Update-x64.exe` | 42.8 MB | `022bc413fc90a34f8b5accb4e2a64e347291a80987ee4f40ef5e7282c6621847` |
 | `release/SHA256SUMS.txt` | — | 上述 + ReleaseNotes |
 
 ## 6. 未解决 / 未验证

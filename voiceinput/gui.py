@@ -364,6 +364,7 @@ class SettingsApp:
         bar = tk.Frame(card, bg=_CARD)
         bar.pack(fill="x", pady=(8, 0))
         ttk.Button(bar, text="刷新", command=self._diag_refresh).pack(side="left")
+        ttk.Button(bar, text="检查更新", command=self._check_update).pack(side="left", padx=6)
         ttk.Button(bar, text="加载测试", command=self._diag_load_test).pack(side="left", padx=6)
         ttk.Button(bar, text="校验模型", command=self._verify_models).pack(side="left")
         ttk.Button(bar, text="复制报告", command=self._diag_copy).pack(side="left", padx=6)
@@ -743,6 +744,31 @@ class SettingsApp:
         self.root.clipboard_clear()
         self.root.clipboard_append(text)
         self.var["diag_status"].set("报告已复制")
+
+    def _check_update(self) -> None:
+        from . import update as update_mod
+
+        self.var["diag_status"].set("正在检查更新…")
+
+        def worker() -> None:
+            source = str((load_config(self.config_path).get("update", {}) or {}).get("manifest_url", "") or "")
+            result = update_mod.check_for_update(source=source)
+            self.root.after(0, lambda: self._update_checked(result, update_mod))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _update_checked(self, result, update_mod) -> None:
+        self.var["diag_status"].set(result.message)
+        if result.status == "available" and result.info:
+            messagebox.showinfo(
+                "发现新版本",
+                f"{result.message}\n\n请在托盘菜单选择「检查更新…」下载并安装；\n或前往：\n{result.info.release_notes_url}",
+            )
+        elif result.status == "model_mismatch" and result.info and result.info.full_installer_url:
+            if messagebox.askyesno("需要完整安装包", result.message + "\n\n是否打开下载页面？"):
+                import webbrowser
+
+                webbrowser.open(result.info.full_installer_url)
 
     def _verify_models(self) -> None:
         self.var["asr_status"].set("正在校验模型文件（SHA-256）…")

@@ -4,8 +4,9 @@
 
 | 文件 | 大小 | SHA-256 |
 |---|---:|---|
-| `release/LocalVoiceInput-Setup-x64.exe` | 1543.7 MB | `d57e511e08a41395e19ab32935ab2d22e6e44c7bc5965432dd9db325e2d3dde0` |
-| `release/LocalVoiceInput-Portable-x64.zip` | 1758.7 MB | `c96adf4c39f8ac1422546b12ddbfcbd9ac75cb5c648260a9fa833014d8efd33e` |
+| `release/LocalVoiceInput-Setup-x64.exe` | 1546.5 MB | `66cf940fa1a31751bbffb4e98cac7c4eb4ddc2ac67d1cf058b1f23509eeedf5b` |
+| `release/LocalVoiceInput-Portable-x64.zip` | 1768.2 MB | `f89187dc03d41750a4663a082c1cd4e1b8668a015948ec32aa37bc698e8c4d14` |
+| `release/LocalVoiceInput-Update-x64.exe` | 42.8 MB | `022bc413fc90a34f8b5accb4e2a64e347291a80987ee4f40ef5e7282c6621847` |
 | `release/SHA256SUMS.txt` | — | 上述两行 |
 
 - 版本：**1.0.0**
@@ -110,6 +111,29 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1 -NoModels -Sk
 
 > 首次安装、卸载后重装、模型版本升级仍需使用完整包。
 > 增量包只适用于“已安装完整版且模型未变”的升级场景。
+
+### 5.1 模型集校验
+
+- `models/model-set.txt` 与 `manifest.json` 的 `model_set` 当前为 `2026-10-20.1`。
+- 应用启动时校验；增量安装器读取 `model-set.txt` 校验；不匹配时拒绝启动识别/拒绝安装。
+- 旧版 v1.0.0 没有 marker 时按兼容迁移处理，后续版本必须携带 marker。
+
+### 5.2 签名更新清单
+
+```powershell
+# 构建增量包后生成签名清单（需要 keys/update_ed25519.pem）
+python scripts\make_update_manifest.py --version 1.1.0 `
+  --update-exe release\LocalVoiceInput-Update-x64.exe `
+  --full-exe release\LocalVoiceInput-Setup-x64.exe `
+  --out release\update.json
+
+# 发布时把 update.json 一起上传；应用默认读取
+# https://github.com/pxxfrank/voiceinput/releases/latest/download/update.json
+```
+
+- 清单使用 Ed25519 签名，公钥硬编码在 `voiceinput/update.py`；私钥仅构建机持有，**必须离线备份**。
+- 应用下载后校验清单签名 + 更新包 SHA-256，再退出并启动安装器。
+- 私钥丢失后需重新生成并在新版本中替换公钥；旧版本将无法验证新清单。
 
 ## 6. 实际部署验证
 

@@ -41,6 +41,8 @@ class Segment:
     merge_note: str = ""
     requires_review: bool = False
     guard: dict[str, Any] = field(default_factory=dict)
+    edits: list[dict[str, Any]] = field(default_factory=list)
+    edit_decisions: list[bool] = field(default_factory=list)
     error: str = ""
     refine_source: str = ""
     asr_ms: float = 0.0
@@ -137,6 +139,8 @@ class RefinementPipeline:
             segment.error = result.error
             segment.requires_review = False
             segment.refine_ms = result.latency_ms
+            segment.edits = []
+            segment.edit_decisions = []
             return RefineOutcome(segment, applied=False)
 
         guard: GuardResult = check_refinement(
@@ -147,12 +151,16 @@ class RefinementPipeline:
             level=level,
         )
         segment.guard = guard.to_dict()
+        segment.edits = [e for e in (result.edits or []) if isinstance(e, dict)]
+        segment.edit_decisions = [True] * len(segment.edits)
         segment.refine_ms = result.latency_ms
         if not guard.ok:
             segment.refined = base
             segment.refine_source = "fallback"
             segment.requires_review = True
             segment.error = "; ".join(guard.hard_errors)[:300]
+            segment.edits = []
+            segment.edit_decisions = []
             return RefineOutcome(segment, applied=False)
 
         segment.refined = result.text
@@ -164,6 +172,50 @@ class RefinementPipeline:
         segment.user_edited = (text or "").strip()
         segment.requires_review = False
         segment.bump()
+
+
+def apply_edit_decisions(segment: Segment, decisions: list[bool]) -> Segment:
+    """按逐条接受/拒绝结果重建文本。
+
+    全部接受时保留 LLM 的 refined 文本；有拒绝时从规范化原文出发只应用接受的
+    edits，避免把被拒绝的修改留在结果里。
+    """
+    if not segment.edits:
+        segment.edit_decisions = []
+        return segment
+    decisions = [bool(x) for x in decisions[: len(segment.edits)]]
+    if len(decisions) < len(segment.edits):
+        decisions.extend([True] * (len(segment.edits) - len(decisions)))
+    segment.edit_decisions = decisions
+    if all(decisions):
+        segment.user_edited = ""
+        segment.requires_review = False
+        segment.bump()
+        return segment
+
+    text = segment.normalized or segment.faithful_text
+    for edit, accepted in zip(segment.edits, decisions):
+        if not accepted:
+            continue
+        source = str(edit.get("source", "") or "")
+        replacement = str(edit.get("replacement", "") or "")
+        if source and source in text:
+            text = text.replace(source, replacement, 1)
+    segment.user_edited = text.strip()
+    segment.requires_review = False
+    segment.bump()
+    return segment
+
+
+def diff_ops(original: str, revised: str) -> list[tuple[str, str, str]]:
+    """字符级 diff，供精修面板渲染：[(equal/delete/insert/replace, left, right)]。"""
+    import difflib
+
+    matcher = difflib.SequenceMatcher(None, original or "", revised or "", autojunk=False)
+    result: list[tuple[str, str, str]] = []
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        result.append((tag, (original or "")[i1:i2], (revised or "")[j1:j2]))
+    return result
 
 
 def compose_text(segments: list[Segment]) -> str:

@@ -19,7 +19,9 @@ Windows 11 x64 本地离线语音输入法：流式识别、识别复核、本�
 - **流式 ASR**：sherpa-onnx 在线 Zipformer（中英混排 + 标点，INT8，CPU）。
 - **识别复核**：SenseVoice-Small INT8，按需调用、超时回退，不假设复核一定更正确。
 - **本地 LLM**：Qwen3.5-2B Q4_K_M + llama.cpp 子进程；结构化 JSON、语义守卫、版本校验、失败回退。
-- **安全输入**：目标窗口/焦点校验；焦点变化不误插入；剪贴板快照/占用校验；非文本剪贴板自动改用 Unicode 直输。
+- **安全输入**：目标窗口/焦点校验；焦点变化不误插入；剪贴板快照/占用校验；非文本剪贴板自动改用 Unicode 直输；终端/控制台兼容矩阵。
+- **精修审阅**：原文/精修差异高亮，逐条接受/拒绝 LLM 修改。
+- **签名更新**：模型集版本校验；Ed25519 签名清单 + SHA-256 校验；无模型增量包 + 退出后安装。
 - **UI**：不抢焦点的置顶悬浮窗、精修对照面板、八页设置、首次引导、托盘、深/浅色、高 DPI。
 - **数据**：SQLite 历史/词库/统计；安装目录与用户数据分离；便携模式。
 
@@ -77,6 +79,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1 -NoModels -Sk
 - [测试报告](docs/test-report.md)
 - [性能报告](docs/performance-report.md)
 - [部署报告](docs/deployment-report.md)
+- [更新签名与发布](docs/update-signing.md)
 - [依赖许可证](docs/dependency-licenses.md)
 
 ## 验证状态（诚实说明）

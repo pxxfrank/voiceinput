@@ -28,8 +28,10 @@ voiceinput/
   terminology.py    用户词库与受保护术语
   llm.py            llama.cpp 子进程管理、Qwen3.5 精修、JSON 协议、看门狗
   guard.py          语义保护规则（数字、否定、不确定性、英文词、长度）
-  refinement.py     片段版本、精修流水线、单 worker 调度、过期任务丢弃
-  target.py         前台窗口/焦点控件捕获与恢复
+  refinement.py     片段版本、精修流水线、单 worker 调度、过期任务丢弃、逐条修改决策
+  compat.py         Windows 输入目标兼容矩阵（终端/控制台/普通编辑框/Unicode）
+  update.py         签名更新清单、下载校验、退出后安装
+  target.py         前台窗口/焦点控件捕获与恢复、管理员权限检测
   clipboard.py      剪贴板快照/恢复、序列号占用校验
   inject.py         输入事务、目标校验、Unicode 直输回退、撤销
   overlay.py        悬浮输入窗 + 精修面板（进程内 Tk）
@@ -115,8 +117,16 @@ Inno Setup (per-user, 无需管理员)
   %LOCALAPPDATA%\Programs\LocalVoiceInput\
     LocalVoiceInput.exe
     _internal\            PyInstaller 自包含 Python/依赖
-    models\               流式 ASR / 复核 ASR / LLM / llama.cpp / manifest
+    models\               流式 ASR / 复核 ASR / LLM / llama.cpp / manifest / model-set.txt
     licenses\
 ```
 
 用户数据在卸载时保留；安装目录整体删除。
+
+## 8. 模型集与更新
+
+- `models/model-set.txt` 与 `manifest.json` 的 `model_set` 固定模型集版本（当前 `2026-10-20.1`）。
+- 应用启动先校验模型集；不匹配直接进入“模型不可用”状态，不会带病识别。
+- 增量安装器读取 `model-set.txt`，不匹配时中止并提示安装完整包；旧版无 marker 时按兼容迁移处理。
+- 更新清单 `update.json` 使用 Ed25519 签名，应用内置公钥；安装包再按 SHA-256 校验。
+- 更新是“完整应用（不含模型）”，模型复用；模型变更发完整包/模型包，不做二进制差分包。

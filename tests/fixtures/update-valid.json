@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "version": "9.9.9",
+  "channel": "stable",
+  "published": "2026-10-20T06:15:08+00:00",
+  "model_set": "2026-10-20.1",
+  "installer": {
+    "url": "https://github.com/pxxfrank/voiceinput/releases/download/v9.9.9/LocalVoiceInput-Update-x64.exe",
+    "sha256": "d17bde9f42601a3e81ce366f75bafc7a0feef2fa7fc531ba00a325ac9993bdd2",
+    "size": 41884763
+  },
+  "release_notes_url": "https://github.com/pxxfrank/voiceinput/releases/download/v9.9.9/ReleaseNotes.md",
+  "full_installer": {
+    "url": "https://github.com/pxxfrank/voiceinput/releases/download/v9.9.9/LocalVoiceInput-Setup-x64.exe",
+    "sha256": "d57e511e08a41395e19ab32935ab2d22e6e44c7bc5965432dd9db325e2d3dde0",
+    "size": 1618639164
+  },
+  "portable": {
+    "url": "https://github.com/pxxfrank/voiceinput/releases/download/v9.9.9/LocalVoiceInput-Portable-x64.zip",
+    "sha256": "c96adf4c39f8ac1422546b12ddbfcbd9ac75cb5c648260a9fa833014d8efd33e",
+    "size": 1844095173
+  },
+  "signature": "z4cVpiCEHzlqfRiOlI/gNEFjDZMzehc502QeCdboFHOnJ6GyVqZ9XF7H6+ZFTg/2Ag5PFIN2YwmxC6F7hcLYCg=="
+}

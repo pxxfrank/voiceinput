@@ -161,6 +161,9 @@ def ensure_llama(refresh: bool = False) -> Path:
 def write_manifest() -> Path:
     entries = []
     root = paths.models_dir()
+    # 模型集版本标记：应用/增量安装器据此判断“应用与模型是否配套”
+    marker = root / "model-set.txt"
+    marker.write_text(paths.MODEL_SET + "\n", encoding="ascii")
     for path in sorted(root.rglob("*")):
         if not path.is_file():
             continue
@@ -184,6 +187,7 @@ def write_manifest() -> Path:
         )
     manifest = {
         "schema": 1,
+        "model_set": paths.MODEL_SET,
         "generated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "app_version": paths.VERSION,
         "models": entries,
@@ -198,12 +202,14 @@ def verify() -> int:
     if not modelstore.manifest_path().exists():
         print("缺少 models/manifest.json，请先运行 --manifest")
         return 2
+    status = modelstore.model_set_status()
+    print(f"模型集：实际 {status.actual or '未知'} / 需要 {status.required}（{'匹配' if status.compatible else '不匹配'}）")
     results = modelstore.verify_manifest()
     bad = [r for r in results if not r["ok"]]
     for r in results:
         print(f"[{'OK ' if r['ok'] else 'BAD'}] {r['name']} ({r['size']} bytes)")
     print(f"{len(results) - len(bad)}/{len(results)} 通过")
-    return 0 if not bad else 1
+    return 0 if not bad and status.compatible else 1
 
 
 def main() -> int:

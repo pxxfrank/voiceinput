@@ -395,6 +395,7 @@ class ReviewWindow:
             ("复制", "review_copy"),
             ("重新识别", "review_rerecognize"),
             ("重新精修", "review_rerun"),
+            ("差异对照", "review_diff"),
             ("精修选中", "review_refine_selection"),
             ("深度整理", "review_deep"),
             ("恢复原文", "review_restore"),
@@ -446,6 +447,7 @@ class ReviewWindow:
             bg=c["card"], fg=c["fg"], padx=12, pady=10, undo=True,
             font=("Microsoft YaHei", 11), spacing1=2, spacing3=2,
         )
+        self.editor.tag_configure("base", foreground=c["fg"])
         self.editor.pack(fill="both", expand=True)
         self.editor.bind("<KeyRelease>", self._on_edit)
 
@@ -507,7 +509,7 @@ class ReviewWindow:
         text = seg.original_text if self.show_original.get() else (seg.user_edited or seg.refined or seg.faithful_text)
         self.editor.configure(state="normal")
         self.editor.delete("1.0", "end")
-        self.editor.insert("1.0", text)
+        self.editor.insert("1.0", text, "base")
         self.editor.configure(state="normal" if not self.show_original.get() else "disabled")
         self.editor.configure(fg=self.colors["fg"], insertbackground=self.colors["fg"])
         notes = []
@@ -571,3 +573,198 @@ class ReviewWindow:
     def refresh(self) -> None:
         if self.visible:
             self._populate()
+
+
+class DiffWindow:
+    """原文 / 精修差异对照，支持逐条接受或拒绝 LLM 修改。"""
+
+    def __init__(self, root: tk.Tk, cfg: dict[str, Any], on_command: Callable[[str, Any], None]) -> None:
+        self.root = root
+        self.cfg = cfg
+        self.on_command = on_command
+        self.colors = DARK if (cfg.get("ui", {}) or {}).get("theme", "dark") != "light" else LIGHT
+        self.win: tk.Toplevel | None = None
+        self.segment: Any = None
+        self.decisions: list[bool] = []
+
+    def _ensure(self) -> tk.Toplevel:
+        if self.win and self.win.winfo_exists():
+            return self.win
+        c = self.colors
+        win = tk.Toplevel(self.root)
+        win.title("精修差异对照 - 本地语音输入")
+        sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
+        width, height = min(1000, max(760, sw - 160)), min(680, max(500, sh - 160))
+        win.geometry(f"{width}x{height}+{(sw - width) // 2}+{(sh - height) // 2}")
+        win.minsize(760, 500)
+        win.configure(bg=c["bg"])
+        win.protocol("WM_DELETE_WINDOW", self.hide)
+
+        top = tk.Frame(win, bg=c["bg"], padx=16, pady=10)
+        top.pack(fill="x")
+        tk.Label(top, text="差异对照", bg=c["bg"], fg=c["fg"], font=("Microsoft YaHei", 14, "bold")).pack(side="left")
+        self.info = tk.Label(top, text="", bg=c["bg"], fg=c["muted"], font=("Microsoft YaHei", 9))
+        self.info.pack(side="right")
+
+        body = tk.Frame(win, bg=c["bg"], padx=16)
+        body.pack(fill="both", expand=True)
+
+        panes = tk.Frame(body, bg=c["bg"])
+        panes.pack(fill="both", expand=True)
+        left_frame = tk.Frame(panes, bg=c["bg"])
+        left_frame.pack(side="left", fill="both", expand=True, padx=(0, 6))
+        tk.Label(left_frame, text="原文", bg=c["bg"], fg=c["muted"], anchor="w", font=("Microsoft YaHei", 9)).pack(fill="x")
+        self.left = tk.Text(
+            left_frame, wrap="word", bd=0, highlightthickness=1, highlightbackground=c["border"],
+            bg=c["card"], fg=c["fg"], padx=10, pady=8, font=("Microsoft YaHei", 10),
+        )
+        self.left.pack(fill="both", expand=True)
+
+        right_frame = tk.Frame(panes, bg=c["bg"])
+        right_frame.pack(side="left", fill="both", expand=True, padx=(6, 0))
+        tk.Label(right_frame, text="精修", bg=c["bg"], fg=c["muted"], anchor="w", font=("Microsoft YaHei", 9)).pack(fill="x")
+        self.right = tk.Text(
+            right_frame, wrap="word", bd=0, highlightthickness=1, highlightbackground=c["border"],
+            bg=c["card"], fg=c["fg"], padx=10, pady=8, font=("Microsoft YaHei", 10),
+        )
+        self.right.pack(fill="both", expand=True)
+
+        for widget in (self.left, self.right):
+            widget.configure(state="disabled")
+            widget.tag_configure("base", foreground=c["fg"])
+            widget.tag_configure("del", foreground="#e5484d", overstrike=True)
+            widget.tag_configure("ins", foreground="#46a758", underline=True)
+
+        list_frame = tk.Frame(win, bg=c["bg"], padx=16, pady=8)
+        list_frame.pack(fill="x")
+        tk.Label(
+            list_frame, text="修改条目（双击切换接受/拒绝）", bg=c["bg"], fg=c["muted"], anchor="w",
+            font=("Microsoft YaHei", 9),
+        ).pack(fill="x")
+        self.tree = ttk.Treeview(
+            list_frame, columns=("no", "source", "replacement", "reason", "decision"),
+            show="headings", height=5,
+        )
+        for col, title, width in (
+            ("no", "#", 34), ("source", "原文", 220), ("replacement", "修改后", 220),
+            ("reason", "原因", 220), ("decision", "状态", 70),
+        ):
+            self.tree.heading(col, text=title)
+            self.tree.column(col, width=width, anchor="w")
+        self.tree.pack(fill="x")
+        self.tree.bind("<Double-1>", lambda _e: self.toggle_selected())
+
+        bar = tk.Frame(win, bg=c["bg"], padx=16, pady=10)
+        bar.pack(fill="x")
+        for label, command in (
+            ("全部接受", lambda: self.set_all(True)),
+            ("全部拒绝", lambda: self.set_all(False)),
+            ("接受选中", lambda: self.set_selected(True)),
+            ("拒绝选中", lambda: self.set_selected(False)),
+            ("关闭", self.hide),
+        ):
+            tk.Button(
+                bar, text=label, bg=c["btn"], fg=c["fg"], activebackground=c["btn_hover"],
+                activeforeground=c["fg"], relief="flat", bd=0, padx=12, pady=6,
+                cursor="hand2", takefocus=0, font=("Microsoft YaHei", 9), command=command,
+            ).pack(side="left", padx=(0, 8))
+        self.status = tk.Label(bar, text="", bg=c["bg"], fg=c["muted"], font=("Microsoft YaHei", 9))
+        self.status.pack(side="right")
+        # 先占住底部空间，避免 expand 的正文把按钮挤出窗口
+        list_frame.pack_forget()
+        bar.pack_forget()
+        bar.pack(side="bottom", fill="x", before=body)
+        list_frame.pack(side="bottom", fill="x", before=body)
+        self.win = win
+        return win
+
+    def show(self, segment: Any) -> None:
+        if segment is None:
+            return
+        self.segment = segment
+        self.decisions = list(getattr(segment, "edit_decisions", []) or [])
+        if len(self.decisions) != len(getattr(segment, "edits", []) or []):
+            self.decisions = [True] * len(getattr(segment, "edits", []) or [])
+        win = self._ensure()
+        self._render()
+        win.deiconify()
+        win.lift()
+        win.focus_force()
+
+    def hide(self) -> None:
+        if self.win and self.win.winfo_exists():
+            self.win.withdraw()
+
+    @property
+    def visible(self) -> bool:
+        return bool(self.win and self.win.winfo_exists() and self.win.state() != "withdrawn")
+
+    def refresh(self) -> None:
+        if self.segment is not None:
+            self._render()
+
+    def _render(self) -> None:
+        seg = self.segment
+        if seg is None:
+            return
+        from .refinement import diff_ops
+
+        original = getattr(seg, "faithful_text", "") or ""
+        revised = (getattr(seg, "user_edited", "") or getattr(seg, "refined", "") or original).strip()
+        self.left.configure(state="normal")
+        self.right.configure(state="normal")
+        self.left.delete("1.0", "end")
+        self.right.delete("1.0", "end")
+        for tag, left_text, right_text in diff_ops(original, revised):
+            if left_text:
+                self.left.insert("end", left_text, "del" if tag in ("delete", "replace") else "base")
+            if right_text:
+                self.right.insert("end", right_text, "ins" if tag in ("insert", "replace") else "base")
+        self.left.configure(state="disabled")
+        self.right.configure(state="disabled")
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        edits = list(getattr(seg, "edits", []) or [])
+        for i, edit in enumerate(edits):
+            decision = bool(self.decisions[i]) if i < len(self.decisions) else True
+            self.tree.insert(
+                "", "end", iid=str(i),
+                values=(i + 1, edit.get("source", ""), edit.get("replacement", ""), edit.get("reason", ""),
+                        "接受" if decision else "拒绝"),
+            )
+        self.info.configure(text=f"{len(edits)} 条修改 · {getattr(seg, 'refine_ms', 0):.0f} ms")
+        self.status.configure(
+            text="模型未提供逐条修改，可用“恢复原文”或直接编辑" if not edits else "逐条选择后立即生效"
+        )
+
+    def _apply(self) -> None:
+        if self.segment is None:
+            return
+        self.on_command("diff_apply", (self.segment, list(self.decisions)))
+
+    def set_all(self, value: bool) -> None:
+        self.decisions = [value] * len(getattr(self.segment, "edits", []) or [])
+        self._render()
+        self._apply()
+
+    def set_selected(self, value: bool) -> None:
+        selection = self.tree.selection()
+        if not selection:
+            return
+        for item in selection:
+            index = int(item)
+            if index < len(self.decisions):
+                self.decisions[index] = value
+        self._render()
+        self._apply()
+
+    def toggle_selected(self) -> None:
+        selection = self.tree.selection()
+        if not selection:
+            return
+        item = selection[0]
+        index = int(item)
+        if index < len(self.decisions):
+            self.decisions[index] = not self.decisions[index]
+        self._render()
+        self._apply()

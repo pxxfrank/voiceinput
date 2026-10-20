@@ -14,6 +14,11 @@ from pathlib import Path
 
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+
+TOKEN_QUERY = 0x0008
+TOKEN_ELEVATION = 20
+PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 
 
 class GUITHREADINFO(ctypes.Structure):
@@ -57,6 +62,21 @@ kernel32.QueryFullProcessImageNameW.argtypes = [
 ]
 kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
 
+advapi32.OpenProcessToken.argtypes = [
+    ctypes.c_void_p,
+    wintypes.DWORD,
+    ctypes.POINTER(ctypes.c_void_p),
+]
+advapi32.OpenProcessToken.restype = wintypes.BOOL
+advapi32.GetTokenInformation.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_int,
+    ctypes.c_void_p,
+    wintypes.DWORD,
+    ctypes.POINTER(wintypes.DWORD),
+]
+advapi32.GetTokenInformation.restype = wintypes.BOOL
+
 
 def _class_name(hwnd: int) -> str:
     if not hwnd:
@@ -83,7 +103,7 @@ def _window_title(hwnd: int) -> str:
 def _process_exe(pid: int) -> str:
     if not pid:
         return ""
-    handle = kernel32.OpenProcess(0x1000, False, int(pid))
+    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
     if not handle:
         return ""
     try:
@@ -96,6 +116,39 @@ def _process_exe(pid: int) -> str:
     return ""
 
 
+def is_process_elevated(pid: int) -> bool:
+    """判断目标进程是否以管理员权限运行（用于 UIPI 提前提示）。"""
+    if not pid:
+        return False
+    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+    if not handle:
+        return False
+    token = ctypes.c_void_p()
+    try:
+        if not advapi32.OpenProcessToken(handle, TOKEN_QUERY, ctypes.byref(token)):
+            return False
+        value = wintypes.DWORD(0)
+        returned = wintypes.DWORD(0)
+        ok = advapi32.GetTokenInformation(
+            token,
+            TOKEN_ELEVATION,
+            ctypes.byref(value),
+            ctypes.sizeof(value),
+            ctypes.byref(returned),
+        )
+        return bool(ok and value.value)
+    except Exception:
+        return False
+    finally:
+        if token:
+            kernel32.CloseHandle(token)
+        kernel32.CloseHandle(handle)
+
+
+def current_process_elevated() -> bool:
+    return is_process_elevated(__import__("os").getpid())
+
+
 @dataclass
 class WindowTarget:
     hwnd: int
@@ -105,6 +158,7 @@ class WindowTarget:
     class_name: str
     focus_hwnd: int = 0
     focus_class: str = ""
+    elevated: bool = False
     captured_at: float = field(default_factory=time.time)
 
     def is_alive(self) -> bool:
@@ -138,6 +192,7 @@ class WindowTarget:
             "class_name": self.class_name,
             "focus_hwnd": self.focus_hwnd,
             "focus_class": self.focus_class,
+            "elevated": self.elevated,
             "captured_at": self.captured_at,
         }
 
@@ -170,6 +225,7 @@ def capture_target() -> WindowTarget | None:
         class_name=_class_name(hwnd),
         focus_hwnd=focus,
         focus_class=_class_name(focus),
+        elevated=is_process_elevated(int(pid.value)),
     )
 
 
