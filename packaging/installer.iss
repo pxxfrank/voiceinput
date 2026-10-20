@@ -61,6 +61,14 @@ Source: "..\build\pkg\LocalVoiceInput\*"; DestDir: "{app}"; Excludes: "models\*,
 Source: "..\build\pkg\LocalVoiceInput\models\*"; DestDir: "{app}\models"; Flags: ignoreversion recursesubdirs createallsubdirs
 #endif
 
+[InstallDelete]
+; 覆盖安装前清理旧应用文件，避免旧版本 _internal 残留；models 目录不动
+Type: filesandordirs; Name: "{app}\_internal"
+Type: filesandordirs; Name: "{app}\licenses"
+Type: files; Name: "{app}\{#MyAppExeName}"
+Type: files; Name: "{app}\README.txt"
+Type: files; Name: "{app}\使用说明.md"
+
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{group}\设置"; Filename: "{app}\{#MyAppExeName}"; Parameters: "--settings"

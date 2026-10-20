@@ -105,7 +105,8 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1 -NoModels -Sk
 增量安装器在 `PrepareToInstall` 中检查目标目录已有的
 `models\manifest.json`、流式 ASR、复核 ASR、LLM GGUF 与 llama-server；
 缺失时中止并提示先安装完整包。Inno Setup 升级不会删除新安装包中未列出的旧文件，
-因此 `models\` 会保留；卸载仍会删除整个安装目录（含模型）。
+因此 `models\` 会保留；安装前会清理旧的 `_internal`、`licenses` 与应用文件，避免旧版本残留叠加。
+卸载仍会删除整个安装目录（含模型）。
 
 > 首次安装、卸载后重装、模型版本升级仍需使用完整包。
 > 增量包只适用于“已安装完整版且模型未变”的升级场景。
