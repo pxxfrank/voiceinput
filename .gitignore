@@ -10,3 +10,11 @@ history.jsonl
 hud.state
 hud.pos
 hud.tmp
+.pytest_cache/
+
+# 构建工具与 1.5 GB 安装包不入库；发布说明与校验值保留
+tools/
+release/*
+!release/ReleaseNotes.md
+!release/SHA256SUMS.txt
+

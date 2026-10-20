@@ -1,0 +1,3 @@
+d57e511e08a41395e19ab32935ab2d22e6e44c7bc5965432dd9db325e2d3dde0  LocalVoiceInput-Setup-x64.exe
+c96adf4c39f8ac1422546b12ddbfcbd9ac75cb5c648260a9fa833014d8efd33e  LocalVoiceInput-Portable-x64.zip
+3a1da5449111b04d112746431a61c6651104b345572d3bbe2480fd893f0bef0f  ReleaseNotes.md

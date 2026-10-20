@@ -1,284 +1,426 @@
-"""图形化配置界面（tkinter，无第三方依赖）。
+"""图形化设置界面（tkinter，无第三方 UI 依赖）。
 
-设计目标：干净、安静、分区清晰的单页式设置（不分顶部页签）；只暴露最常用的几项，
-其余参数使用内置最佳默认值。整体配色参考 Claude 的暖色调。
-
-用法：
-    python -m voiceinput.gui      # 单独打开
-    voiceinput.exe --settings     # 打包版
+八个分区：常规 / 麦克风与音频 / 语音识别 / 智能精修 / 专业词库 / 快捷键 /
+历史记录 / 性能与诊断。保存后写用户目录配置；「保存并重启」通知主程序重启。
 """
 
 from __future__ import annotations
 
-import copy
+import csv
+import os
 import sys
 import threading
 import time
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 from typing import Any
 
-from . import autostart
-from .config import (
-    DEFAULT_CONFIG_PATH,
-    SETTINGS_RESTART_EXIT,
-    load_config,
-    resolve_model_dir,
-    save_config,
-)
+from . import autostart, modelstore, paths
+from .audio import Recorder, list_input_devices
+from .config import load_config, save_config
+from .diagnostics import collect, format_text
+from .storage import Storage
 
-# ---- 配色（Claude 风格：暖白背景 + 陶土色强调） ----
 _BG = "#f5f4ef"
 _CARD = "#ffffff"
-_BORDER = "#e7e5dd"
+_BORDER = "#e5e3db"
 _FG = "#1f1e1c"
 _MUTED = "#8a857a"
 _ACCENT = "#c96442"
 _ACCENT_HOVER = "#b8573a"
 
 
-def _input_devices() -> list[tuple[str, Any]]:
+def _input_device_items() -> list[tuple[str, Any]]:
     items: list[tuple[str, Any]] = [("（系统默认）", None)]
-    try:
-        import sounddevice as sd
-
-        for idx, dev in enumerate(sd.query_devices()):
-            if dev.get("max_input_channels", 0) > 0:
-                items.append((f"{idx}: {dev['name']}", idx))
-    except Exception:
-        pass
+    for dev in list_input_devices():
+        items.append((f"{dev['id']}: {dev['name']}", dev["id"]))
     return items
 
 
-class SettingsWindow:
-    def __init__(self, root: tk.Tk, cfg: dict[str, Any]) -> None:
+class SettingsApp:
+    def __init__(self, root: tk.Tk, cfg: dict[str, Any], config_path: str | None = None) -> None:
         self.root = root
+        self.cfg = cfg
+        self.config_path = config_path
+        self.storage = Storage()
         self.exit_code = 0
-        self._devices = _input_devices()
         self.var: dict[str, tk.Variable] = {}
-        self._test_engine = None
-        self._test_sig = None
-        self._test_audio = None
-        self._test_recording = False
-        self._test_playing = False
+        self._devices = _input_device_items()
+        self._reviewer = None
+        self._llm_server = None
+        self._busy = False
 
-        root.title("voiceinput 设置")
+        root.title("本地语音输入 · 设置")
+        root.geometry("860x660")
+        root.minsize(780, 580)
         root.configure(bg=_BG)
-        root.geometry("720x660")
-        root.minsize(660, 560)
         try:
-            root.iconbitmap(default=str(resolve_model_dir(cfg).parent / "voiceinput.ico"))
+            root.attributes("-topmost", True)
+            root.after(900, lambda: root.attributes("-topmost", False))
         except Exception:
             pass
-
-        self._apply_theme()
+        root.lift()
+        root.focus_force()
+        self._style()
         self._build()
-        self._fill(cfg)
+        self._fill()
 
     # ------------------------------------------------------------------ #
-    # 主题
-    # ------------------------------------------------------------------ #
-    def _apply_theme(self) -> None:
+    def _style(self) -> None:
         style = ttk.Style(self.root)
         try:
             style.theme_use("clam")
         except Exception:
             pass
-        base_font = ("Microsoft YaHei", 10)
-        style.configure(".", background=_BG, foreground=_FG, font=base_font)
+        base = ("Microsoft YaHei", 10)
+        style.configure(".", background=_BG, foreground=_FG, font=base)
         style.configure("TFrame", background=_BG)
-        style.configure("Card.TFrame", background=_CARD)
         style.configure("TLabel", background=_BG, foreground=_FG)
-        style.configure("Card.TLabel", background=_CARD, foreground=_FG)
-        style.configure("Muted.TLabel", background=_CARD, foreground=_MUTED)
+        style.configure("Muted.TLabel", background=_CARD, foreground=_MUTED, font=("Microsoft YaHei", 9))
         style.configure("Title.TLabel", background=_BG, foreground=_FG, font=("Microsoft YaHei", 17, "bold"))
         style.configure("Sub.TLabel", background=_BG, foreground=_MUTED, font=("Microsoft YaHei", 9))
-        style.configure("Section.TLabel", background=_CARD, foreground=_FG, font=("Microsoft YaHei", 11, "bold"))
-        style.configure(
-            "TEntry",
-            fieldbackground="#ffffff", background="#ffffff", foreground=_FG,
-            bordercolor=_BORDER, lightcolor=_BORDER, darkcolor=_BORDER, insertcolor=_FG, padding=6,
-        )
-        style.configure(
-            "TCombobox",
-            fieldbackground="#ffffff", background="#ffffff", foreground=_FG,
-            bordercolor=_BORDER, lightcolor=_BORDER, darkcolor=_BORDER, arrowcolor=_MUTED, padding=4,
-        )
-        style.map("TCombobox", fieldbackground=[("readonly", "#ffffff")], foreground=[("readonly", _FG)])
-        style.configure("TSpinbox", fieldbackground="#ffffff", background="#ffffff", foreground=_FG, bordercolor=_BORDER, arrowcolor=_MUTED, padding=4)
-        style.configure("TButton", background="#fbfbf9", foreground=_FG, bordercolor=_BORDER, focusthickness=0, padding=(12, 6))
+        style.configure("TNotebook", background=_BG, borderwidth=0)
+        style.configure("TNotebook.Tab", background=_BG, foreground=_MUTED, padding=(14, 7), font=base)
+        style.map("TNotebook.Tab", background=[("selected", _CARD)], foreground=[("selected", _FG)])
+        style.configure("TEntry", padding=5, fieldbackground="#ffffff")
+        style.configure("TCombobox", padding=4)
+        style.configure("TSpinbox", padding=4)
+        style.configure("TButton", padding=(12, 6), background="#fbfbf9")
         style.map("TButton", background=[("active", "#f0eee7")])
-        style.configure("Accent.TButton", background=_ACCENT, foreground="#ffffff", bordercolor=_ACCENT, focusthickness=0, padding=(14, 7))
+        style.configure("Accent.TButton", background=_ACCENT, foreground="#ffffff", padding=(14, 7))
         style.map("Accent.TButton", background=[("active", _ACCENT_HOVER)])
         style.configure("TCheckbutton", background=_CARD, foreground=_FG)
-        style.map("TCheckbutton", background=[("active", _CARD)], foreground=[("active", _FG)])
-        style.configure("Vertical.TScrollbar", background="#e3e1d9", troughcolor=_BG, bordercolor=_BG, arrowcolor=_MUTED)
-        self.root.option_add("*TCombobox*Listbox.background", "#ffffff")
-        self.root.option_add("*TCombobox*Listbox.foreground", _FG)
-        self.root.option_add("*TCombobox*Listbox.selectBackground", _ACCENT)
-        self.root.option_add("*TCombobox*Listbox.selectForeground", "#ffffff")
-        self.root.option_add("*TCombobox*Listbox.font", base_font)
+        style.configure("TRadiobutton", background=_CARD, foreground=_FG)
+        style.configure("Treeview", background=_CARD, fieldbackground=_CARD, foreground=_FG, rowheight=26)
+        style.configure("Treeview.Heading", font=("Microsoft YaHei", 9, "bold"))
 
-    # ------------------------------------------------------------------ #
-    # 构建
     # ------------------------------------------------------------------ #
     def _build(self) -> None:
-        header = ttk.Frame(self.root)
-        header.pack(fill="x", padx=20, pady=(16, 8))
-        ttk.Label(header, text="voiceinput", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(header, text="离线语音输入法 · 设置", style="Sub.TLabel").pack(anchor="w")
+        header = tk.Frame(self.root, bg=_BG, padx=22, pady=10)
+        header.pack(fill="x")
+        tk.Label(header, text="本地语音输入", bg=_BG, fg=_FG, font=("Microsoft YaHei", 18, "bold")).pack(anchor="w")
+        tk.Label(header, text=f"v{paths.VERSION} · 全部离线 · 数据目录 {paths.data_root()}", bg=_BG, fg=_MUTED, font=("Microsoft YaHei", 9)).pack(anchor="w")
 
-        inner = self._scroll_area()
+        self.notebook = ttk.Notebook(self.root)
+        self.notebook.pack(fill="both", expand=True, padx=18, pady=(4, 6))
+        self._tab_general()
+        self._tab_audio()
+        self._tab_asr()
+        self._tab_refine()
+        self._tab_terms()
+        self._tab_hotkeys()
+        self._tab_history()
+        self._tab_diagnostics()
 
-        self._build_shortcuts(inner)
-        self._build_microphone(inner)
-        self._build_general(inner)
-        self._build_test(inner)
-        self._build_history(inner)
-        self._build_about(inner)
+        footer = tk.Frame(self.root, bg=_BG, padx=20, pady=12)
+        footer.pack(fill="x")
+        ttk.Button(footer, text="关闭", command=self.root.destroy).pack(side="left")
+        self.var["footer_status"] = tk.StringVar(value="")
+        tk.Label(footer, textvariable=self.var["footer_status"], bg=_BG, fg=_MUTED, font=("Microsoft YaHei", 9)).pack(side="left", padx=14)
+        ttk.Button(footer, text="保存并重启", style="Accent.TButton", command=lambda: self._save(restart=True)).pack(side="right")
+        ttk.Button(footer, text="保存", command=self._save).pack(side="right", padx=(0, 8))
 
-        bar = ttk.Frame(self.root)
-        bar.pack(fill="x", padx=20, pady=(4, 14))
-        ttk.Button(bar, text="保存并重启", style="Accent.TButton", command=self._save_restart).pack(side="right")
-        ttk.Button(bar, text="保存", command=self._save).pack(side="right", padx=(0, 8))
-        ttk.Button(bar, text="关闭", command=self.root.destroy).pack(side="left")
-
-    def _scroll_area(self) -> ttk.Frame:
-        container = ttk.Frame(self.root)
-        container.pack(fill="both", expand=True, padx=20, pady=(0, 4))
-        canvas = tk.Canvas(container, bg=_BG, highlightthickness=0, bd=0)
-        vsb = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
-        inner = ttk.Frame(canvas)
+    def _scrollable(self, parent) -> tk.Frame:
+        canvas = tk.Canvas(parent, bg=_BG, highlightthickness=0, bd=0)
+        vsb = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        inner = tk.Frame(canvas, bg=_BG)
         canvas.create_window((0, 0), window=inner, anchor="nw", tags="inner")
         canvas.configure(yscrollcommand=vsb.set)
         canvas.pack(side="left", fill="both", expand=True)
         vsb.pack(side="right", fill="y")
-
         inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.bind("<Configure>", lambda e: canvas.itemconfigure("inner", width=e.width))
-
-        def on_wheel(event):
-            canvas.yview_scroll(int(-event.delta / 120), "units")
-
-        canvas.bind_all("<MouseWheel>", on_wheel)
+        canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(int(-e.delta / 120), "units"))
         return inner
 
-    def _card(self, parent: ttk.Frame, title: str) -> ttk.Frame:
+    def _page(self, title: str) -> tk.Frame:
+        outer = tk.Frame(self.notebook, bg=_BG)
+        self.notebook.add(outer, text=title)
+        inner = self._scrollable(outer)
+        frame = tk.Frame(inner, bg=_BG, padx=8, pady=10)
+        frame.pack(fill="both", expand=True)
+        return frame
+
+    def _card(self, parent, title: str = "") -> tk.Frame:
         outer = tk.Frame(parent, bg=_BORDER)
         outer.pack(fill="x", pady=(0, 12))
         card = tk.Frame(outer, bg=_CARD, padx=16, pady=14)
         card.pack(fill="x", padx=1, pady=1)
         if title:
-            tk.Label(card, text=title, bg=_CARD, fg=_FG, font=("Microsoft YaHei", 11, "bold")).pack(anchor="w", pady=(0, 10))
+            tk.Label(card, text=title, bg=_CARD, fg=_FG, font=("Microsoft YaHei", 11, "bold")).pack(anchor="w", pady=(0, 8))
         return card
 
-    def _row(self, card: tk.Frame, label: str) -> tk.Frame:
+    def _row(self, card, label: str, hint: str = "") -> tk.Frame:
         row = tk.Frame(card, bg=_CARD)
-        row.pack(fill="x", pady=5)
-        tk.Label(row, text=label, bg=_CARD, fg=_FG, width=16, anchor="w").pack(side="left")
-        return row
+        row.pack(fill="x", pady=4)
+        tk.Label(row, text=label, bg=_CARD, fg=_FG, width=18, anchor="w").pack(side="left")
+        holder = tk.Frame(row, bg=_CARD)
+        holder.pack(side="left", fill="x", expand=True)
+        if hint:
+            tk.Label(row, text=hint, bg=_CARD, fg=_MUTED, font=("Microsoft YaHei", 8)).pack(side="right")
+        return holder
 
-    def _note(self, card: tk.Frame, text: str) -> None:
-        tk.Label(card, text=text, bg=_CARD, fg=_MUTED, justify="left", anchor="w", wraplength=560).pack(
-            fill="x", pady=(6, 0)
-        )
+    def _note(self, card, text: str) -> None:
+        tk.Label(card, text=text, bg=_CARD, fg=_MUTED, justify="left", anchor="w", wraplength=700, font=("Microsoft YaHei", 9)).pack(fill="x", pady=(8, 0))
 
-    def _build_shortcuts(self, parent: ttk.Frame) -> None:
-        card = self._card(parent, "快捷键")
-        self.var["hotkey"] = tk.StringVar()
-        self._hotkey_row(self._row(card, "按住说话热键"), self.var["hotkey"])
-        self.var["hotkey_continuous"] = tk.StringVar()
-        self._hotkey_row(self._row(card, "连续听写热键"), self.var["hotkey_continuous"])
-        self._note(card, "「按住说话」按住录音、松开上屏；「连续听写」按一下开始、再按一下停止。点「捕获按键」后直接按一下你想用的键。")
-
-    def _build_microphone(self, parent: ttk.Frame) -> None:
-        card = self._card(parent, "麦克风")
-        row = self._row(card, "输入设备")
+    # ------------------------------------------------------------------ #
+    def _tab_general(self) -> None:
+        page = self._page("常规")
+        card = self._card(page, "输入模式")
+        self.var["mode"] = tk.StringVar()
+        box = self._row(card, "默认模式")
         ttk.Combobox(
-            row, textvariable=self.var.setdefault("device", tk.StringVar()),
-            values=[d[0] for d in self._devices], state="readonly", width=34,
-        ).pack(side="left", fill="x", expand=True)
-        ttk.Button(row, text="自动检测", width=10, command=self._auto_detect_mic).pack(side="left", padx=(8, 0))
-        self.var["general_status"] = tk.StringVar(value="")
-        tk.Label(card, textvariable=self.var["general_status"], bg=_CARD, fg=_ACCENT, anchor="w", justify="left", wraplength=560).pack(fill="x", pady=(8, 0))
+            box, textvariable=self.var["mode"], state="readonly", width=18,
+            values=["极速输入", "智能精修", "自动"],
+        ).pack(side="left")
+        self._note(card, "极速：说完立即上屏，不调用 LLM；精修：面板确认后插入；自动：短句极速，长时自动转精修确认（不会自动改写风格）。")
 
-    def _build_general(self, parent: ttk.Frame) -> None:
-        card = self._card(parent, "常规")
+        card = self._card(page, "外观与启动")
         self.var["autostart"] = tk.BooleanVar()
-        ttk.Checkbutton(
-            card, text="开机自动启动", variable=self.var["autostart"], command=self._toggle_autostart
-        ).pack(anchor="w")
+        ttk.Checkbutton(card, text="开机自动启动", variable=self.var["autostart"], command=self._toggle_autostart).pack(anchor="w")
+        self.var["theme"] = tk.StringVar()
+        box = self._row(card, "主题")
+        ttk.Combobox(box, textvariable=self.var["theme"], state="readonly", width=12, values=["dark", "light", "system"]).pack(side="left")
+        self.var["overlay"] = tk.StringVar()
+        box = self._row(card, "悬浮窗")
+        ttk.Combobox(box, textvariable=self.var["overlay"], state="readonly", width=14, values=["show", "off"]).pack(side="left")
+        self.var["width"] = tk.StringVar()
+        box = self._row(card, "悬浮窗宽度")
+        ttk.Spinbox(box, from_=420, to=1200, textvariable=self.var["width"], width=8).pack(side="left")
+        self.var["font_size"] = tk.StringVar()
+        box = self._row(card, "字幕字号")
+        ttk.Spinbox(box, from_=10, to=32, textvariable=self.var["font_size"], width=8).pack(side="left")
 
-    def _build_test(self, parent: ttk.Frame) -> None:
-        card = self._card(parent, "麦克风测试")
-        row = self._row(card, "录音时长（秒）")
-        self.var["test_seconds"] = tk.StringVar(value="5")
-        ttk.Spinbox(row, from_=1, to=30, textvariable=self.var["test_seconds"], width=6).pack(side="left")
+    def _tab_audio(self) -> None:
+        page = self._page("麦克风与音频")
+        card = self._card(page, "输入设备")
+        self.var["device"] = tk.StringVar()
+        box = self._row(card, "麦克风")
+        ttk.Combobox(box, textvariable=self.var["device"], values=[x[0] for x in self._devices], state="readonly", width=42).pack(side="left", fill="x", expand=True)
+        ttk.Button(card, text="自动检测", command=self._detect_mic).pack(anchor="w", pady=(8, 0))
+        self.var["audio_status"] = tk.StringVar(value="")
+        tk.Label(card, textvariable=self.var["audio_status"], bg=_CARD, fg=_ACCENT, anchor="w", justify="left", wraplength=700).pack(fill="x", pady=(8, 0))
 
-        btns = tk.Frame(card, bg=_CARD)
-        btns.pack(fill="x", pady=(8, 4))
-        self._test_btn = ttk.Button(btns, text="开始录音", command=self._test_toggle)
-        self._test_btn.pack(side="left")
-        ttk.Button(btns, text="试听", command=self._test_play).pack(side="left", padx=8)
-        ttk.Button(btns, text="清空", command=lambda: self._test_text.delete("1.0", "end")).pack(side="left")
+        card = self._card(page, "端点与静音")
+        self.var["endpoint_ms"] = tk.StringVar()
+        box = self._row(card, "句末静音（毫秒）")
+        ttk.Spinbox(box, from_=200, to=3000, increment=50, textvariable=self.var["endpoint_ms"], width=8).pack(side="left")
+        self.var["min_segment"] = tk.StringVar()
+        box = self._row(card, "最短片段（秒）")
+        ttk.Spinbox(box, from_=0.2, to=3.0, increment=0.1, textvariable=self.var["min_segment"], width=8).pack(side="left")
+        self.var["max_segment"] = tk.StringVar()
+        box = self._row(card, "最长片段（秒）")
+        ttk.Spinbox(box, from_=5, to=60, textvariable=self.var["max_segment"], width=8).pack(side="left")
+        self.var["silence_timeout"] = tk.StringVar()
+        box = self._row(card, "无语音自动停止（秒）")
+        ttk.Spinbox(box, from_=0, to=300, textvariable=self.var["silence_timeout"], width=8).pack(side="left")
+        self._note(card, "句末静音只结束当前片段，不会结束整个输入会话；短暂停顿可以继续说。")
 
-        self.var["test_status"] = tk.StringVar(value="点「开始录音」后对着麦克风说话。")
-        tk.Label(card, textvariable=self.var["test_status"], bg=_CARD, fg=_MUTED, anchor="w", justify="left", wraplength=560).pack(fill="x", pady=(2, 6))
-        self._test_text = tk.Text(card, height=4, wrap="word", bd=0, highlightthickness=1, highlightbackground=_BORDER, bg="#fbfbf9", fg=_FG, padx=8, pady=6, font=("Microsoft YaHei", 10))
-        self._test_text.pack(fill="x")
+        card = self._card(page, "麦克风测试")
+        self.var["mic_test_status"] = tk.StringVar(value="录 4 秒并调用本机识别模型。")
+        tk.Label(card, textvariable=self.var["mic_test_status"], bg=_CARD, fg=_MUTED, anchor="w", justify="left", wraplength=700).pack(fill="x")
+        self.mic_test_text = tk.Text(card, height=4, wrap="word", bd=0, highlightthickness=1, highlightbackground=_BORDER, bg="#fbfbf9", fg=_FG, padx=8, pady=6, font=("Microsoft YaHei", 10))
+        self.mic_test_text.pack(fill="x", pady=(8, 6))
+        bar = tk.Frame(card, bg=_CARD)
+        bar.pack(fill="x")
+        self.mic_test_btn = ttk.Button(bar, text="开始录音测试", command=self._test_mic)
+        self.mic_test_btn.pack(side="left")
 
-    def _build_history(self, parent: ttk.Frame) -> None:
-        card = self._card(parent, "历史")
-        self._history_items: list[dict] = []
-        self._history_list = tk.Listbox(card, height=6, bd=0, highlightthickness=1, highlightbackground=_BORDER, bg="#fbfbf9", fg=_FG, activestyle="none", font=("Microsoft YaHei", 10), selectbackground=_ACCENT, selectforeground="#ffffff")
-        self._history_list.pack(fill="x")
-        btns = tk.Frame(card, bg=_CARD)
-        btns.pack(fill="x", pady=(8, 0))
-        ttk.Button(btns, text="复制选中", command=self._history_copy).pack(side="left")
-        ttk.Button(btns, text="刷新", command=self._history_refresh).pack(side="left", padx=8)
-        ttk.Button(btns, text="清空", command=self._history_clear).pack(side="left")
+    def _tab_asr(self) -> None:
+        page = self._page("语音识别")
+        card = self._card(page, "流式主模型")
+        self.var["stream_model"] = tk.StringVar(value=str(modelstore.find_streaming_dir(self.cfg) or "未找到"))
+        tk.Label(card, textvariable=self.var["stream_model"], bg=_CARD, fg=_MUTED, anchor="w", wraplength=700, font=("Microsoft YaHei", 9)).pack(fill="x")
+        self.var["threads"] = tk.StringVar()
+        box = self._row(card, "推理线程")
+        ttk.Spinbox(box, from_=1, to=16, textvariable=self.var["threads"], width=8).pack(side="left")
+
+        card = self._card(page, "识别复核（非流式）")
+        self.var["review_enabled"] = tk.BooleanVar()
+        ttk.Checkbutton(card, text="启用复核模型（SenseVoice）", variable=self.var["review_enabled"]).pack(anchor="w")
+        self.var["review_mode"] = tk.StringVar()
+        box = self._row(card, "复核策略")
+        ttk.Combobox(box, textvariable=self.var["review_mode"], state="readonly", width=14, values=["off", "auto", "always"]).pack(side="left")
+        self.var["review_min"] = tk.StringVar()
+        box = self._row(card, "最短复核时长（秒）")
+        ttk.Spinbox(box, from_=0.5, to=15, increment=0.5, textvariable=self.var["review_min"], width=8).pack(side="left")
+        self.var["review_timeout"] = tk.StringVar()
+        box = self._row(card, "复核超时（秒）")
+        ttk.Spinbox(box, from_=0.5, to=10, increment=0.5, textvariable=self.var["review_timeout"], width=8).pack(side="left")
+        self._note(card, "复核结果不会无条件覆盖流式结果：数字/术语丢失或相似度过低时保留流式结果并标记。")
+
+        card = self._card(page, "模型检查")
+        self.var["asr_status"] = tk.StringVar(value="")
+        tk.Label(card, textvariable=self.var["asr_status"], bg=_CARD, fg=_MUTED, anchor="w", justify="left", wraplength=700).pack(fill="x")
+        ttk.Button(card, text="校验模型文件", command=self._verify_models).pack(anchor="w", pady=(8, 0))
+
+    def _tab_refine(self) -> None:
+        page = self._page("智能精修")
+        card = self._card(page, "本地 LLM")
+        self.var["refine_enabled"] = tk.BooleanVar()
+        ttk.Checkbutton(card, text="启用 LLM 精修（关闭后只用忠实转录）", variable=self.var["refine_enabled"]).pack(anchor="w")
+        self.var["refine_level"] = tk.StringVar()
+        box = self._row(card, "精修档位")
+        ttk.Combobox(box, textvariable=self.var["refine_level"], state="readonly", width=14, values=["faithful", "standard", "deep"]).pack(side="left")
+        self.var["preload"] = tk.BooleanVar()
+        ttk.Checkbutton(card, text="启动时预加载模型（首用更快，占用内存）", variable=self.var["preload"]).pack(anchor="w", pady=(4, 0))
+        self.var["refine_threads"] = tk.StringVar()
+        box = self._row(card, "推理线程（0=自动）")
+        ttk.Spinbox(box, from_=0, to=16, textvariable=self.var["refine_threads"], width=8).pack(side="left")
+        self.var["refine_timeout"] = tk.StringVar()
+        box = self._row(card, "超时（秒）")
+        ttk.Spinbox(box, from_=2, to=60, textvariable=self.var["refine_timeout"], width=8).pack(side="left")
+        self.var["idle_unload"] = tk.StringVar()
+        box = self._row(card, "空闲卸载（秒，0=不卸载）")
+        ttk.Spinbox(box, from_=0, to=3600, increment=60, textvariable=self.var["idle_unload"], width=8).pack(side="left")
+        self.var["llm_model"] = tk.StringVar(value=str(modelstore.find_llm_model(self.cfg) or "未找到"))
+        tk.Label(card, textvariable=self.var["llm_model"], bg=_CARD, fg=_MUTED, anchor="w", wraplength=700, font=("Microsoft YaHei", 9)).pack(fill="x", pady=(8, 0))
+
+        card = self._card(page, "精修测试")
+        self.var["refine_status"] = tk.StringVar(value="")
+        tk.Label(card, textvariable=self.var["refine_status"], bg=_CARD, fg=_MUTED, anchor="w", justify="left", wraplength=700).pack(fill="x")
+        self.refine_test_text = tk.Text(card, height=4, wrap="word", bd=0, highlightthickness=1, highlightbackground=_BORDER, bg="#fbfbf9", fg=_FG, padx=8, pady=6, font=("Microsoft YaHei", 10))
+        self.refine_test_text.pack(fill="x", pady=(8, 6))
+        ttk.Button(card, text="运行精修测试", command=self._test_refine).pack(anchor="w")
+        self._note(card, "精修不阻塞录音与流式识别；模型不可用时自动回退到规则处理，并在界面显示状态。")
+
+    def _tab_terms(self) -> None:
+        page = self._page("专业词库")
+        card = self._card(page, "术语与纠错")
+        cols = ("wrong", "correct", "protected")
+        self.term_tree = ttk.Treeview(card, columns=cols, show="headings", height=8)
+        for col, title, width in (("wrong", "识别到的词", 200), ("correct", "正确写法", 200), ("protected", "受保护", 80)):
+            self.term_tree.heading(col, text=title)
+            self.term_tree.column(col, width=width, anchor="w")
+        self.term_tree.pack(fill="x")
+        self.term_tree.bind("<<TreeviewSelect>>", self._term_selected)
+
+        form = tk.Frame(card, bg=_CARD)
+        form.pack(fill="x", pady=(10, 0))
+        self.var["term_wrong"] = tk.StringVar()
+        self.var["term_correct"] = tk.StringVar()
+        self.var["term_protected"] = tk.BooleanVar(value=False)
+        ttk.Entry(form, textvariable=self.var["term_wrong"], width=20).pack(side="left", padx=(0, 6))
+        tk.Label(form, text="→", bg=_CARD, fg=_MUTED).pack(side="left")
+        ttk.Entry(form, textvariable=self.var["term_correct"], width=20).pack(side="left", padx=6)
+        ttk.Checkbutton(form, text="受保护", variable=self.var["term_protected"]).pack(side="left", padx=6)
+        ttk.Button(form, text="添加/更新", command=self._term_add).pack(side="left")
+        ttk.Button(form, text="删除", command=self._term_delete).pack(side="left", padx=6)
+        ttk.Button(form, text="导入 CSV", command=self._term_import).pack(side="left")
+        ttk.Button(form, text="导出 CSV", command=self._term_export).pack(side="left", padx=6)
+        self.var["term_status"] = tk.StringVar(value="")
+        tk.Label(card, textvariable=self.var["term_status"], bg=_CARD, fg=_MUTED, anchor="w").pack(fill="x", pady=(6, 0))
+        self._terms_refresh()
+
+    def _tab_hotkeys(self) -> None:
+        page = self._page("快捷键")
+        card = self._card(page, "按键")
+        self.var["hotkey"] = tk.StringVar()
+        self._hotkey_row(card, "按住说话", self.var["hotkey"])
+        self.var["hotkey_mode"] = tk.StringVar()
+        box = self._row(card, "触发方式")
+        ttk.Combobox(box, textvariable=self.var["hotkey_mode"], state="readonly", width=12, values=["hold", "toggle"]).pack(side="left")
+        self.var["continuous"] = tk.StringVar()
+        self._hotkey_row(card, "连续听写", self.var["continuous"])
+        self.var["commit_key"] = tk.StringVar()
+        self._hotkey_row(card, "提交/确认", self.var["commit_key"])
+        self.var["undo_key"] = tk.StringVar()
+        self._hotkey_row(card, "撤销上屏", self.var["undo_key"])
+        self.var["cancel_key"] = tk.StringVar()
+        self._hotkey_row(card, "取消输入", self.var["cancel_key"])
+        self._note(card, "点「捕获按键」后直接按下目标键。热键在保存并重启后生效。")
+
+    def _hotkey_row(self, card, label: str, var: tk.StringVar) -> None:
+        row = self._row(card, label)
+        ttk.Entry(row, textvariable=var, state="readonly", width=20).pack(side="left")
+        btn = ttk.Button(row, text="捕获按键", width=9)
+        btn.pack(side="left", padx=6)
+        btn.configure(command=lambda v=var, b=btn: self._capture(v, b))
+
+    def _tab_history(self) -> None:
+        page = self._page("历史记录")
+        card = self._card(page, "转录历史")
+        self.var["history_enabled"] = tk.BooleanVar()
+        ttk.Checkbutton(card, text="保存历史（仅本地数据库）", variable=self.var["history_enabled"]).pack(anchor="w")
+        self.var["history_max"] = tk.StringVar()
+        box = self._row(card, "最多保留条数")
+        ttk.Spinbox(box, from_=50, to=5000, increment=50, textvariable=self.var["history_max"], width=8).pack(side="left")
+        self.history_list = tk.Listbox(card, height=12, bd=0, highlightthickness=1, highlightbackground=_BORDER, bg="#fbfbf9", fg=_FG, font=("Microsoft YaHei", 9), selectbackground=_ACCENT, selectforeground="#ffffff", activestyle="none")
+        self.history_list.pack(fill="both", expand=True, pady=(8, 6))
+        bar = tk.Frame(card, bg=_CARD)
+        bar.pack(fill="x")
+        ttk.Button(bar, text="复制选中", command=self._history_copy).pack(side="left")
+        ttk.Button(bar, text="刷新", command=self._history_refresh).pack(side="left", padx=6)
+        ttk.Button(bar, text="清空历史", command=self._history_clear).pack(side="left")
         self.var["history_status"] = tk.StringVar(value="")
         tk.Label(card, textvariable=self.var["history_status"], bg=_CARD, fg=_MUTED, anchor="w").pack(fill="x", pady=(6, 0))
         self._history_refresh()
 
-    def _build_about(self, parent: ttk.Frame) -> None:
-        card = self._card(parent, "关于")
-        self._about_text = tk.Text(card, height=7, wrap="word", bd=0, highlightthickness=1, highlightbackground=_BORDER, bg="#fbfbf9", fg=_MUTED, padx=8, pady=6, font=("Microsoft YaHei", 9))
-        self._about_text.insert("1.0", self._about_info())
-        self._about_text.config(state="disabled")
-        self._about_text.pack(fill="x")
-        btns = tk.Frame(card, bg=_CARD)
-        btns.pack(fill="x", pady=(8, 0))
-        ttk.Button(btns, text="检查更新", command=self._check_update).pack(side="left")
-        ttk.Button(btns, text="复制信息", command=self._copy_about).pack(side="left", padx=8)
-        self.var["about_status"] = tk.StringVar(value="")
-        tk.Label(card, textvariable=self.var["about_status"], bg=_CARD, fg=_MUTED, anchor="w", justify="left", wraplength=560).pack(fill="x", pady=(6, 0))
-
-        model_row = self._row(card, "模型")
-        self.var["model_choice"] = tk.StringVar(value=str(load_config().get("engine", "sensevoice")))
-        ttk.Combobox(model_row, textvariable=self.var["model_choice"], values=["sensevoice", "paraformer"], state="readonly", width=14).pack(side="left")
-        ttk.Button(model_row, text="下载并切换", command=self._download_switch_model).pack(side="left", padx=8)
-        self.var["model_status"] = tk.StringVar(value="")
-        tk.Label(card, textvariable=self.var["model_status"], bg=_CARD, fg=_MUTED, anchor="w", justify="left", wraplength=560).pack(fill="x", pady=(6, 0))
-
-    def _hotkey_row(self, row: tk.Frame, var: tk.StringVar) -> None:
-        holder = tk.Frame(row, bg=_CARD)
-        holder.pack(side="left", fill="x", expand=True)
-        ttk.Entry(holder, textvariable=var, state="readonly").pack(side="left", fill="x", expand=True)
-        button = ttk.Button(holder, text="捕获按键", width=10)
-        button.pack(side="left", padx=(8, 0))
-        button.config(command=lambda: self._capture_key(var, button))
+    def _tab_diagnostics(self) -> None:
+        page = self._page("性能与诊断")
+        card = self._card(page, "运行信息")
+        self.diag_text = tk.Text(card, height=16, wrap="word", bd=0, highlightthickness=1, highlightbackground=_BORDER, bg="#fbfbf9", fg=_FG, padx=10, pady=8, font=("Consolas", 9))
+        self.diag_text.pack(fill="both", expand=True)
+        bar = tk.Frame(card, bg=_CARD)
+        bar.pack(fill="x", pady=(8, 0))
+        ttk.Button(bar, text="刷新", command=self._diag_refresh).pack(side="left")
+        ttk.Button(bar, text="加载测试", command=self._diag_load_test).pack(side="left", padx=6)
+        ttk.Button(bar, text="校验模型", command=self._verify_models).pack(side="left")
+        ttk.Button(bar, text="复制报告", command=self._diag_copy).pack(side="left", padx=6)
+        ttk.Button(bar, text="打开数据目录", command=lambda: os.startfile(str(paths.data_root()))).pack(side="left")
+        ttk.Button(bar, text="打开日志", command=lambda: os.startfile(str(paths.logs_dir()))).pack(side="left", padx=6)
+        self.var["diag_status"] = tk.StringVar(value="")
+        tk.Label(card, textvariable=self.var["diag_status"], bg=_CARD, fg=_MUTED, anchor="w", justify="left", wraplength=700).pack(fill="x", pady=(6, 0))
+        self._diag_refresh()
 
     # ------------------------------------------------------------------ #
-    # 取值 / 赋值
-    # ------------------------------------------------------------------ #
+    def _fill(self) -> None:
+        cfg = self.cfg
+        self.var["mode"].set({"fast": "极速输入", "smart": "智能精修", "auto": "自动"}.get(cfg.get("mode", "auto"), "自动"))
+        self.var["autostart"].set(autostart.is_enabled())
+        ui = cfg.get("ui", {})
+        self.var["theme"].set(ui.get("theme", "dark"))
+        self.var["overlay"].set(ui.get("overlay", "show"))
+        self.var["width"].set(str(ui.get("width", 720)))
+        self.var["font_size"].set(str(ui.get("font_size", 14)))
+        self.var["device"].set(self._device_label(cfg.get("audio", {}).get("device")))
+        audio = cfg.get("audio", {})
+        vad = audio.get("vad", {})
+        self.var["endpoint_ms"].set(str(int(vad.get("endpoint_ms", 650))))
+        self.var["min_segment"].set(str(vad.get("min_segment_s", 0.4)))
+        self.var["max_segment"].set(str(vad.get("max_segment_s", 20.0)))
+        self.var["silence_timeout"].set(str(audio.get("silence_timeout", 30.0)))
+        self.var["threads"].set(str(cfg.get("streaming", {}).get("threads", 4)))
+        review = cfg.get("review", {})
+        self.var["review_enabled"].set(bool(review.get("enabled", True)))
+        self.var["review_mode"].set(str(review.get("mode", "auto")))
+        self.var["review_min"].set(str(review.get("min_segment_s", 2.5)))
+        self.var["review_timeout"].set(str(review.get("timeout_s", 2.0)))
+        refine = cfg.get("refine", {})
+        self.var["refine_enabled"].set(bool(refine.get("enabled", True)))
+        self.var["refine_level"].set(str(refine.get("level", "standard")))
+        self.var["preload"].set(bool(refine.get("preload", True)))
+        self.var["refine_threads"].set(str(refine.get("threads", 0)))
+        self.var["refine_timeout"].set(str(refine.get("timeout_s", 12.0)))
+        self.var["idle_unload"].set(str(refine.get("idle_unload_s", 900)))
+        hist = cfg.get("history", {})
+        self.var["history_enabled"].set(bool(hist.get("enabled", True)))
+        self.var["history_max"].set(str(hist.get("max", 500)))
+        hot = cfg.get("hotkey", {})
+        self.var["hotkey"].set(str(hot.get("key", "f9")))
+        self.var["hotkey_mode"].set(str(hot.get("mode", "hold")))
+        self.var["continuous"].set(str(hot.get("continuous", "")))
+        self.var["commit_key"].set(str(hot.get("commit", "")))
+        self.var["undo_key"].set(str(hot.get("undo", "")))
+        self.var["cancel_key"].set(str(hot.get("cancel", "esc")))
+
     def _device_label(self, value: Any) -> str:
         for label, val in self._devices:
             if val == value:
                 return label
         if value not in (None, ""):
-            self._devices.append((str(value), value))
-            return str(value)
+            self._devices.append((f"{value}", value))
+            return f"{value}"
         return self._devices[0][0]
 
     def _device_value(self) -> Any:
@@ -288,97 +430,99 @@ class SettingsWindow:
                 return val
         return None
 
-    def _fill(self, cfg: dict[str, Any]) -> None:
-        self.var["hotkey"].set(str(cfg["hotkey"]["key"]))
-        self.var["hotkey_continuous"].set(str(cfg["hotkey"].get("continuous", "")))
-        self.var["device"].set(self._device_label(cfg["audio"]["device"]))
-        self.var["autostart"].set(autostart.is_enabled())
-
-    def _collect(self, base: dict[str, Any]) -> dict[str, Any]:
-        """只覆盖界面上呈现的项，其余保持原样（即最佳默认值）。"""
-        cfg = copy.deepcopy(base)
-        hotkey = cfg.setdefault("hotkey", {})
-        hotkey["key"] = self.var["hotkey"].get().strip() or "f9"
-        hotkey["continuous"] = self.var["hotkey_continuous"].get().strip()
-        cfg.setdefault("audio", {})["device"] = self._device_value()
+    # ------------------------------------------------------------------ #
+    def _collect(self) -> dict[str, Any]:
+        cfg = load_config(self.config_path)
+        cfg["mode"] = {"极速输入": "fast", "智能精修": "smart", "自动": "auto"}.get(self.var["mode"].get(), "auto")
+        ui = cfg.setdefault("ui", {})
+        ui["theme"] = self.var["theme"].get()
+        ui["overlay"] = self.var["overlay"].get()
+        try:
+            ui["width"] = max(420, min(1200, int(float(self.var["width"].get()))))
+            ui["font_size"] = max(10, min(32, int(float(self.var["font_size"].get()))))
+        except ValueError:
+            pass
+        audio = cfg.setdefault("audio", {})
+        audio["device"] = self._device_value()
+        vad = audio.setdefault("vad", {})
+        for key, var in (("endpoint_ms", "endpoint_ms"), ("min_segment_s", "min_segment"), ("max_segment_s", "max_segment"), ("silence_timeout", "silence_timeout")):
+            try:
+                value = float(self.var[var].get())
+                if key == "silence_timeout":
+                    audio[key] = value
+                else:
+                    vad[key] = value
+            except ValueError:
+                pass
+        cfg.setdefault("streaming", {})["threads"] = max(1, min(16, int(float(self.var["threads"].get() or 4))))
+        review = cfg.setdefault("review", {})
+        review["enabled"] = bool(self.var["review_enabled"].get())
+        review["mode"] = self.var["review_mode"].get()
+        try:
+            review["min_segment_s"] = float(self.var["review_min"].get())
+            review["timeout_s"] = float(self.var["review_timeout"].get())
+        except ValueError:
+            pass
+        refine = cfg.setdefault("refine", {})
+        refine["enabled"] = bool(self.var["refine_enabled"].get())
+        refine["level"] = self.var["refine_level"].get()
+        refine["preload"] = bool(self.var["preload"].get())
+        try:
+            refine["threads"] = int(float(self.var["refine_threads"].get() or 0))
+            refine["timeout_s"] = float(self.var["refine_timeout"].get())
+            refine["idle_unload_s"] = float(self.var["idle_unload"].get())
+        except ValueError:
+            pass
+        hist = cfg.setdefault("history", {})
+        hist["enabled"] = bool(self.var["history_enabled"].get())
+        try:
+            hist["max"] = int(float(self.var["history_max"].get()))
+        except ValueError:
+            pass
+        hot = cfg.setdefault("hotkey", {})
+        hot["key"] = self.var["hotkey"].get().strip() or "f9"
+        hot["mode"] = self.var["hotkey_mode"].get() or "hold"
+        hot["continuous"] = self.var["continuous"].get().strip()
+        hot["commit"] = self.var["commit_key"].get().strip()
+        hot["undo"] = self.var["undo_key"].get().strip()
+        hot["cancel"] = self.var["cancel_key"].get().strip() or "esc"
         return cfg
 
+    def _save(self, restart: bool = False) -> None:
+        try:
+            cfg = self._collect()
+            save_config(cfg, self.config_path)
+        except Exception as exc:
+            messagebox.showerror("保存失败", str(exc))
+            return
+        self.var["footer_status"].set(f"已保存 {time.strftime('%H:%M:%S')}")
+        if restart:
+            self.exit_code = 42
+            self.root.destroy()
+        else:
+            messagebox.showinfo("已保存", "设置已保存；热键、模型等需要重启程序后生效。")
+
     # ------------------------------------------------------------------ #
-    # 动作
-    # ------------------------------------------------------------------ #
-    def _capture_key(self, var: tk.StringVar, button: ttk.Button) -> None:
-        button.config(state="disabled", text="请按键…")
+    def _capture(self, var: tk.StringVar, button: ttk.Button) -> None:
+        button.configure(state="disabled", text="请按键…")
 
         def worker() -> None:
             name = None
             try:
                 import keyboard
 
-                name = keyboard.read_event(suppress=True).name
+                event = keyboard.read_event(suppress=True)
+                name = event.name
             except Exception:
                 pass
-            self.root.after(0, lambda: self._on_captured(var, button, name))
+            self.root.after(0, lambda: self._captured(var, button, name))
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _on_captured(self, var: tk.StringVar, button: ttk.Button, name: str | None) -> None:
-        button.config(state="normal", text="捕获按键")
+    def _captured(self, var: tk.StringVar, button: ttk.Button, name: str | None) -> None:
+        button.configure(state="normal", text="捕获按键")
         if name:
             var.set(name)
-
-    def _auto_detect_mic(self) -> None:
-        if not messagebox.askokcancel(
-            "voiceinput", "将同时监听各个麦克风，请在这几秒内对着麦克风连续说几句话。\n\n开始检测？"
-        ):
-            return
-        self.var["general_status"].set("正在检测麦克风… 请说话")
-
-        def worker() -> None:
-            from .devices import detect_best_input_device
-
-            try:
-                result = detect_best_input_device(seconds=3.0)
-            except Exception as exc:  # noqa: BLE001
-                self.root.after(0, lambda: self.var["general_status"].set(f"检测失败：{exc}"))
-                return
-            self.root.after(0, lambda: self._apply_detected(result))
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _apply_detected(self, result) -> None:
-        if not result:
-            self.var["general_status"].set("未检测到可用麦克风。")
-            return
-        idx, name, _levels = result
-        self.var["device"].set(self._device_label(idx))
-        self.var["general_status"].set(f"已选择信号最强的麦克风：{name}")
-
-    def _history_refresh(self) -> None:
-        from .history import load
-
-        self._history_items = load(limit=300)
-        self._history_list.delete(0, "end")
-        for item in self._history_items:
-            text = str(item.get("text", "")).replace("\n", " ")
-            self._history_list.insert("end", f"{item.get('time', '')}  {text}")
-        self.var["history_status"].set(f"共 {len(self._history_items)} 条")
-
-    def _history_copy(self) -> None:
-        selection = self._history_list.curselection()
-        if not selection:
-            self.var["history_status"].set("请先选中一条记录。")
-            return
-        text = str(self._history_items[selection[0]].get("text", ""))
-        self.root.clipboard_clear()
-        self.root.clipboard_append(text)
-        self.var["history_status"].set("已复制选中内容到剪贴板。")
-
-    def _history_clear(self) -> None:
-        if messagebox.askyesno("voiceinput", "清空全部历史记录？"):
-            from .history import clear
-
-            clear()
-            self._history_refresh()
 
     def _toggle_autostart(self) -> None:
         try:
@@ -386,244 +530,244 @@ class SettingsWindow:
                 autostart.enable()
             else:
                 autostart.disable()
-        except Exception as exc:  # noqa: BLE001
-            messagebox.showerror("voiceinput", f"设置开机自启失败：{exc}")
+        except Exception as exc:
+            messagebox.showerror("开机自启", str(exc))
             self.var["autostart"].set(autostart.is_enabled())
 
-    def _save(self) -> dict[str, Any] | None:
-        cfg = self._collect(load_config())
-        try:
-            path = save_config(cfg)
-        except Exception as exc:  # noqa: BLE001
-            messagebox.showerror("voiceinput", f"保存失败：{exc}")
-            return None
-        messagebox.showinfo("voiceinput", f"已保存，重启后生效：\n{path}")
-        return cfg
-
-    def _save_restart(self) -> None:
-        cfg = self._collect(load_config())
-        try:
-            save_config(cfg)
-        except Exception as exc:  # noqa: BLE001
-            messagebox.showerror("voiceinput", f"保存失败：{exc}")
+    def _detect_mic(self) -> None:
+        if not messagebox.askokcancel("自动检测", "将同时监听各麦克风 3 秒，请对着麦克风说话。"):
             return
-        self.exit_code = SETTINGS_RESTART_EXIT
-        self.root.destroy()
-
-    # ------------------------------------------------------------------ #
-    # 麦克风测试
-    # ------------------------------------------------------------------ #
-    def _test_toggle(self) -> None:
-        if self._test_recording:
-            self._test_recording = False
-            self._test_btn.config(text="正在结束…", state="disabled")
-            return
-        self._test_recording = True
-        self._test_btn.config(text="停止录音")
-        self.var["test_status"].set("录音中… 请对着麦克风说话")
-        threading.Thread(target=self._test_record_worker, daemon=True).start()
-
-    def _test_seconds(self) -> int:
-        try:
-            return max(1, int(float(self.var["test_seconds"].get())))
-        except (TypeError, ValueError):
-            return 5
-
-    def _test_record_worker(self) -> None:
-        from .recorder import Recorder
-
-        seconds = self._test_seconds()
-        try:
-            rec = Recorder(device=self._device_value(), max_duration=seconds)
-            rec.start()
-            start = time.time()
-            while self._test_recording and (time.time() - start) < seconds:
-                time.sleep(0.05)
-            data = rec.stop()
-        except Exception as exc:  # noqa: BLE001
-            self._test_recording = False
-            self.root.after(0, lambda: self._test_fail(f"录音失败：{exc}"))
-            return
-        self._test_recording = False
-        if data is None or data.size == 0:
-            self.root.after(0, lambda: self._test_fail("没有录到声音，请检查麦克风。"))
-            return
-        self._test_audio = data
-        self.root.after(0, lambda: self._test_transcribe(data))
-
-    def _test_transcribe(self, data) -> None:
-        self._test_btn.config(state="disabled", text="识别中…")
-        self.var["test_status"].set("正在识别…（首次需加载模型，请稍候）")
-        threading.Thread(target=self._test_transcribe_worker, args=(data,), daemon=True).start()
-
-    def _test_transcribe_worker(self, data) -> None:
-        from .recorder import TARGET_SR
-
-        try:
-            engine = self._get_test_engine()
-            text = engine.transcribe(data, TARGET_SR)
-        except Exception as exc:  # noqa: BLE001
-            self.root.after(0, lambda: self._test_fail(f"识别失败：{exc}"))
-            return
-        self.root.after(0, lambda: self._test_show(text))
-
-    def _get_test_engine(self):
-        from .engines import build_engine
-
-        cfg = self._collect(load_config())
-        signature = (cfg["engine"], str(resolve_model_dir(cfg)), cfg["threads"])
-        if self._test_engine is not None and self._test_sig == signature:
-            return self._test_engine
-        engine = build_engine(cfg)
-        self._test_engine, self._test_sig = engine, signature
-        return engine
-
-    def _test_show(self, text: str) -> None:
-        self._test_btn.config(state="normal", text="开始录音")
-        self._test_text.delete("1.0", "end")
-        self._test_text.insert("1.0", text or "（未识别到内容）")
-        self.var["test_status"].set("识别完成" if text else "未识别到内容")
-
-    def _test_fail(self, message: str) -> None:
-        self._test_recording = False
-        self._test_btn.config(state="normal", text="开始录音")
-        self.var["test_status"].set(message)
-
-    def _test_play(self) -> None:
-        if self._test_audio is None:
-            self.var["test_status"].set("还没有录音可试听，请先录音。")
-            return
-        if self._test_playing:
-            return
-        self._test_playing = True
-        self.var["test_status"].set("播放中…")
+        self.var["audio_status"].set("正在检测…")
 
         def worker() -> None:
-            from .recorder import TARGET_SR
+            from .devices import detect_best_input_device
 
-            import sounddevice as sd
-
-            try:
-                sd.play(self._test_audio, TARGET_SR)
-                sd.wait()
-            except Exception as exc:  # noqa: BLE001
-                self.root.after(0, lambda: self._test_fail(f"播放失败：{exc}"))
-                return
-            self._test_playing = False
-            self.root.after(0, lambda: self.var["test_status"].set("就绪"))
+            result = detect_best_input_device(seconds=3.0)
+            self.root.after(0, lambda: self._detected(result))
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def _detected(self, result) -> None:
+        if not result:
+            self.var["audio_status"].set("未检测到可用麦克风。")
+            return
+        idx, name, _levels = result
+        self.var["device"].set(self._device_label(idx))
+        self.var["audio_status"].set(f"已选择信号最强的麦克风：{name}")
+
     # ------------------------------------------------------------------ #
-    # 关于 / 更新
+    def _test_mic(self) -> None:
+        if self._busy:
+            return
+        self._busy = True
+        self.mic_test_btn.configure(state="disabled")
+        self.var["mic_test_status"].set("录音 4 秒… 请说话")
+        device = self._device_value()
+
+        def worker() -> None:
+            try:
+                rec = Recorder(device=device, max_duration=5.0)
+                rec.start()
+                time.sleep(4.0)
+                data = rec.stop()
+                if data is None or len(data) == 0:
+                    raise RuntimeError("没有录到声音")
+                self.root.after(0, lambda: self.var["mic_test_status"].set("正在加载复核模型并识别…"))
+                if self._reviewer is None:
+                    from .engines import OfflineReviewer
+
+                    self._reviewer = OfflineReviewer(load_config(self.config_path))
+                text = self._reviewer.review(data, timeout=30.0) or ""
+                self.root.after(0, lambda: self._mic_done(text, None))
+            except Exception as exc:
+                self.root.after(0, lambda: self._mic_done("", str(exc)))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _mic_done(self, text: str, error: str | None) -> None:
+        self._busy = False
+        self.mic_test_btn.configure(state="normal")
+        if error:
+            self.var["mic_test_status"].set(f"测试失败：{error}")
+            return
+        self.mic_test_text.delete("1.0", "end")
+        self.mic_test_text.insert("1.0", text or "（未识别到内容）")
+        self.var["mic_test_status"].set("识别完成" if text else "未识别到内容")
+
+    def _test_refine(self) -> None:
+        if self._busy:
+            return
+        self._busy = True
+        self.var["refine_status"].set("正在加载本地 LLM…（首次约 10 秒）")
+
+        def worker() -> None:
+            from .llm import LlamaServer, Refiner
+
+            try:
+                cfg = load_config(self.config_path)
+                if self._llm_server is None:
+                    self._llm_server = LlamaServer(cfg)
+                self._llm_server.start()
+                refiner = Refiner(cfg, self._llm_server)
+                text = "嗯那个我们今天呢主要是讨论一下 agent memory 的设计方案。"
+                out = refiner.refine(segment_id="settings_test", source_revision=1, text=text, context=[], level="standard")
+                self.root.after(0, lambda: self._refine_done(out, None))
+            except Exception as exc:
+                self.root.after(0, lambda: self._refine_done(None, str(exc)))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _refine_done(self, out, error: str | None) -> None:
+        self._busy = False
+        if error:
+            self.var["refine_status"].set(f"精修测试失败：{error}")
+            return
+        self.refine_test_text.delete("1.0", "end")
+        self.refine_test_text.insert("1.0", out.text if out and out.ok else f"失败：{out.error if out else ''}")
+        self.var["refine_status"].set(f"完成 · {out.latency_ms:.0f} ms" if out and out.ok else "精修失败，已回退")
+
     # ------------------------------------------------------------------ #
-    def _about_info(self) -> str:
-        import platform
-        from importlib.metadata import PackageNotFoundError
-        from importlib.metadata import version as pkg_version
+    def _terms_refresh(self) -> None:
+        for item in self.term_tree.get_children():
+            self.term_tree.delete(item)
+        for row in self.storage.list_terms():
+            self.term_tree.insert("", "end", iid=str(row["id"]), values=(row["wrong"], row["correct"], "是" if row["protected"] else ""))
+        self.var["term_status"].set(f"共 {len(self.storage.list_terms())} 条")
 
-        from . import __version__
+    def _term_selected(self, _event=None) -> None:
+        selection = self.term_tree.selection()
+        if not selection:
+            return
+        values = self.term_tree.item(selection[0], "values")
+        self.var["term_wrong"].set(values[0])
+        self.var["term_correct"].set(values[1])
+        self.var["term_protected"].set(values[2] == "是")
 
-        cfg = load_config()
-        model_dir = resolve_model_dir(cfg)
-        lines = [
-            f"voiceinput {__version__}    Python {platform.python_version()} ({platform.architecture()[0]})",
-            f"引擎 {cfg['engine']}    模型目录 {model_dir} [{'存在' if model_dir.exists() else '不存在'}]",
-            f"配置文件 {DEFAULT_CONFIG_PATH}",
-            "依赖：" + "  ".join(
-                f"{p}={pkg_version(p)}"
-                for p in ("sherpa-onnx", "sounddevice", "soxr", "faster-whisper")
-                if _pkg_ok(p, pkg_version, PackageNotFoundError)
-            ),
-            "",
-            "完全离线：识别全部在本机完成，不产生任何网络请求。",
-        ]
-        return "\n".join(lines)
+    def _term_add(self) -> None:
+        wrong = self.var["term_wrong"].get().strip()
+        correct = self.var["term_correct"].get().strip()
+        if not wrong or not correct:
+            self.var["term_status"].set("请填写识别词与正确写法")
+            return
+        self.storage.upsert_term(wrong, correct, protected=bool(self.var["term_protected"].get()))
+        self._terms_refresh()
 
-    def _copy_about(self) -> None:
-        text = self._about_text.get("1.0", "end").strip()
+    def _term_delete(self) -> None:
+        selection = self.term_tree.selection()
+        if not selection:
+            return
+        for item in selection:
+            self.storage.delete_term(int(item))
+        self._terms_refresh()
+
+    def _term_import(self) -> None:
+        path = filedialog.askopenfilename(filetypes=[("CSV", "*.csv")])
+        if not path:
+            return
+        try:
+            with open(path, encoding="utf-8-sig", newline="") as fh:
+                for row in csv.reader(fh):
+                    if len(row) >= 2 and row[0].strip():
+                        self.storage.upsert_term(row[0], row[1], protected=len(row) > 2 and row[2].strip() in ("1", "true", "是"))
+            self._terms_refresh()
+            self.var["term_status"].set("导入完成")
+        except Exception as exc:
+            self.var["term_status"].set(f"导入失败：{exc}")
+
+    def _term_export(self) -> None:
+        path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV", "*.csv")])
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8-sig", newline="") as fh:
+                writer = csv.writer(fh)
+                for row in self.storage.list_terms():
+                    writer.writerow([row["wrong"], row["correct"], "1" if row["protected"] else "0"])
+            self.var["term_status"].set("导出完成")
+        except Exception as exc:
+            self.var["term_status"].set(f"导出失败：{exc}")
+
+    # ------------------------------------------------------------------ #
+    def _history_refresh(self) -> None:
+        items = self.storage.list_history(300)
+        self.history_list.delete(0, "end")
+        for item in items:
+            text = str(item.get("final_text", "")).replace("\n", " ")
+            self.history_list.insert("end", f"{item.get('ts', '')}  {text[:80]}")
+        self.var["history_status"].set(f"共 {len(items)} 条")
+
+    def _history_copy(self) -> None:
+        selection = self.history_list.curselection()
+        if not selection:
+            return
+        items = self.storage.list_history(300)
+        text = items[selection[0]].get("final_text", "")
         self.root.clipboard_clear()
         self.root.clipboard_append(text)
-        self.var["about_status"].set("已复制到剪贴板。")
+        self.var["history_status"].set("已复制")
 
-    def _check_update(self) -> None:
-        self.var["about_status"].set("正在检查更新…")
+    def _history_clear(self) -> None:
+        if messagebox.askyesno("清空历史", "确定删除全部历史记录？此操作不可恢复。"):
+            self.storage.clear_history()
+            self._history_refresh()
+
+    # ------------------------------------------------------------------ #
+    def _diag_refresh(self) -> None:
+        try:
+            report = collect(load_config(self.config_path), load_test=False)
+            self.diag_text.delete("1.0", "end")
+            self.diag_text.insert("1.0", format_text(report))
+            self.var["diag_status"].set("已刷新")
+        except Exception as exc:
+            self.var["diag_status"].set(f"诊断失败：{exc}")
+
+    def _diag_load_test(self) -> None:
+        self.var["diag_status"].set("正在加载全部模型（约 20 秒）…")
 
         def worker() -> None:
-            import json
-            import urllib.request
-            from importlib.metadata import PackageNotFoundError
-            from importlib.metadata import version as pkg_version
-
             try:
-                with urllib.request.urlopen(
-                    "https://pypi.org/pypi/sherpa-onnx/json", timeout=8
-                ) as resp:
-                    latest = json.load(resp)["info"]["version"]
-            except Exception as exc:  # noqa: BLE001
-                self.root.after(0, lambda: self.var["about_status"].set(f"无法检查更新（可能无网络）：{exc}"))
-                return
-            try:
-                current = pkg_version("sherpa-onnx")
-            except PackageNotFoundError:
-                current = "未知"
-            message = (
-                f"sherpa-onnx 已是最新版本（{current}）。"
-                if current == latest
-                else f"sherpa-onnx 有新版本：{current} → {latest}\n更新命令：uv pip install -U sherpa-onnx"
-            )
-            self.root.after(0, lambda: self.var["about_status"].set(message))
+                report = collect(load_config(self.config_path), load_test=True)
+                self.root.after(0, lambda: self._diag_loaded(report))
+            except Exception as exc:
+                self.root.after(0, lambda: self.var["diag_status"].set(f"加载测试失败：{exc}"))
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _download_switch_model(self) -> None:
-        engine = self.var["model_choice"].get()
-        self.var["model_status"].set(f"开始下载 {engine} 模型…")
+    def _diag_loaded(self, report) -> None:
+        self.diag_text.delete("1.0", "end")
+        self.diag_text.insert("1.0", format_text(report))
+        self.var["diag_status"].set("加载测试完成")
+
+    def _diag_copy(self) -> None:
+        text = self.diag_text.get("1.0", "end").strip()
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+        self.var["diag_status"].set("报告已复制")
+
+    def _verify_models(self) -> None:
+        self.var["asr_status"].set("正在校验模型文件（SHA-256）…")
 
         def worker() -> None:
-            from .download_models import download
-
-            cfg = load_config()
-
-            def progress(pct: float) -> None:
-                self.root.after(0, lambda: self.var["model_status"].set(f"下载 {engine}：{pct * 100:.0f}%"))
-
-            try:
-                download(engine, resolve_model_dir(cfg), progress=progress)
-            except Exception as exc:  # noqa: BLE001
-                self.root.after(0, lambda: self.var["model_status"].set(f"下载失败：{exc}"))
-                return
-            cfg["engine"] = engine
-            try:
-                save_config(cfg)
-            except Exception as exc:  # noqa: BLE001
-                self.root.after(0, lambda: self.var["model_status"].set(f"保存失败：{exc}"))
-                return
-            self.root.after(0, lambda: self._after_model_switch(engine))
+            results = modelstore.verify_manifest()
+            bad = [r for r in results if not r["ok"]]
+            self.root.after(0, lambda: self._verify_done(results, bad))
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _after_model_switch(self, engine: str) -> None:
-        self.var["model_status"].set(f"已下载并设为 {engine}。")
-        if messagebox.askyesno("voiceinput", f"已切换为 {engine}，是否立即重启以生效？"):
-            self.exit_code = SETTINGS_RESTART_EXIT
-            self.root.destroy()
+    def _verify_done(self, results, bad) -> None:
+        message = f"校验 {len(results)} 个文件，" + ("全部通过" if not bad else f"{len(bad)} 个异常")
+        self.var["asr_status"].set(message)
+        self.var["diag_status"].set(message)
+        if bad:
+            messagebox.showwarning("模型校验", "\n".join(f"{r['name']}: {r['path']}" for r in bad[:5]))
 
 
-def _pkg_ok(name: str, version_fn, not_found) -> bool:
-    try:
-        version_fn(name)
-        return True
-    except not_found:
-        return False
-
-
-def main() -> int:
-    cfg = load_config()
+def main(config_path: str | None = None) -> int:
+    cfg = load_config(config_path)
     root = tk.Tk()
-    window = SettingsWindow(root, cfg)
+    app = SettingsApp(root, cfg, config_path)
     root.mainloop()
-    return window.exit_code
+    return app.exit_code
 
 
 if __name__ == "__main__":

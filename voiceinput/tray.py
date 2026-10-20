@@ -1,4 +1,4 @@
-"""系统托盘图标与状态显示。"""
+"""系统托盘：状态、模式切换、设置/引导入口。"""
 
 from __future__ import annotations
 
@@ -16,13 +16,13 @@ _COLORS = {
     "processing": (230, 180, 40),
     "error": (200, 40, 130),
 }
+_MODE_TEXT = {"fast": "极速输入", "smart": "智能精修", "auto": "自动"}
 
 
 def _icon_image(color: tuple[int, int, int], size: int = 64) -> Image.Image:
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     d.ellipse((4, 4, size - 4, size - 4), fill=color)
-    # 简化的麦克风图形
     cx = size / 2
     d.rounded_rectangle((cx - 7, 16, cx + 7, 38), radius=7, fill=(255, 255, 255))
     d.arc((cx - 14, 26, cx + 14, 50), start=0, end=180, fill=(255, 255, 255), width=3)
@@ -36,125 +36,87 @@ class TrayController:
         title: str,
         on_quit: Callable[[], None],
         on_open_settings: Optional[Callable[[], None]] = None,
-        on_open_config: Optional[Callable[[], None]] = None,
-        on_open_models: Optional[Callable[[], None]] = None,
-        on_toggle_autostart: Optional[Callable[[], None]] = None,
-        is_autostart: Optional[Callable[[], bool]] = None,
+        on_set_mode: Optional[Callable[[str], None]] = None,
+        mode: Optional[Callable[[], str]] = None,
+        on_open_panel: Optional[Callable[[], None]] = None,
+        on_open_onboarding: Optional[Callable[[], None]] = None,
+        on_undo: Optional[Callable[[], None]] = None,
         on_restart: Optional[Callable[[], None]] = None,
-        on_set_caption: Optional[Callable[[str], None]] = None,
-        caption_mode: Optional[Callable[[], str]] = None,
-        on_set_font: Optional[Callable[[int], None]] = None,
-        font_size: Optional[Callable[[], int]] = None,
     ) -> None:
         self._on_quit = on_quit
         self._on_open_settings = on_open_settings
-        self._on_open_config = on_open_config
-        self._on_open_models = on_open_models
-        self._on_toggle_autostart = on_toggle_autostart
-        self._is_autostart = is_autostart
+        self._on_set_mode = on_set_mode
+        self._mode = mode
+        self._on_open_panel = on_open_panel
+        self._on_open_onboarding = on_open_onboarding
+        self._on_undo = on_undo
         self._on_restart = on_restart
-        self._on_set_caption = on_set_caption
-        self._caption_mode = caption_mode
-        self._on_set_font = on_set_font
-        self._font_size = font_size
         self._info_lines: list[str] = []
         self._icon = pystray.Icon(
-            "voiceinput",
+            "LocalVoiceInput",
             _icon_image(_COLORS["idle"]),
             title,
             menu=self._build_menu(),
         )
 
     def _build_menu(self) -> pystray.Menu:
-        items = []
+        items: list = []
         for line in self._info_lines:
             items.append(pystray.MenuItem(line, None, enabled=False))
         if self._info_lines:
             items.append(pystray.Menu.SEPARATOR)
-        if self._on_open_settings:
-            items.append(pystray.MenuItem("设置…", lambda: self._on_open_settings(), default=True))
-        if self._on_open_config:
-            items.append(pystray.MenuItem("打开配置文件", lambda: self._on_open_config()))
-        if self._on_open_models:
-            items.append(pystray.MenuItem("打开模型目录", lambda: self._on_open_models()))
-        if self._on_set_caption:
+        if self._on_open_panel:
+            items.append(pystray.MenuItem("打开精修面板", lambda: self._on_open_panel(), default=True))
+        if self._on_set_mode:
             items.append(
                 pystray.MenuItem(
-                    "字幕",
-                    pystray.Menu(
-                        pystray.MenuItem(
-                            "悬浮字幕（2 行）",
-                            lambda: self._on_set_caption("show"),
-                            checked=lambda _i: self._caption_mode() == "show",
-                            radio=True,
-                        ),
-                        pystray.MenuItem(
-                            "字幕窗口（全部字幕）",
-                            lambda: self._on_set_caption("window"),
-                            checked=lambda _i: self._caption_mode() == "window",
-                            radio=True,
-                        ),
-                        pystray.MenuItem(
-                            "仅录音指示点",
-                            lambda: self._on_set_caption("dot"),
-                            checked=lambda _i: self._caption_mode() == "dot",
-                            radio=True,
-                        ),
-                        pystray.MenuItem(
-                            "关闭",
-                            lambda: self._on_set_caption("off"),
-                            checked=lambda _i: self._caption_mode() == "off",
-                            radio=True,
-                        ),
-                    ),
-                )
-            )
-        if self._on_set_font:
-            items.append(
-                pystray.MenuItem(
-                    "字幕大小",
+                    "输入模式",
                     pystray.Menu(
                         *[
                             pystray.MenuItem(
                                 label,
-                                (lambda s=value: self._on_set_font(s)),
-                                checked=(lambda _i, v=value: self._font_size() == v),
+                                (lambda m=key: self._on_set_mode(m)),
+                                checked=(lambda _i, k=key: bool(self._mode and self._mode() == k)),
                                 radio=True,
                             )
-                            for label, value in (("小", 13), ("中", 15), ("大", 18), ("特大", 22))
+                            for key, label in (("fast", "极速输入"), ("smart", "智能精修"), ("auto", "自动"))
                         ]
                     ),
                 )
             )
-        if self._on_toggle_autostart:
-            items.append(
-                pystray.MenuItem(
-                    "开机自启",
-                    lambda: self._on_toggle_autostart(),
-                    checked=lambda _item: bool(self._is_autostart and self._is_autostart()),
-                )
-            )
+        if self._on_undo:
+            items.append(pystray.MenuItem("撤销上次上屏", lambda: self._on_undo()))
+        items.append(pystray.Menu.SEPARATOR)
+        if self._on_open_settings:
+            items.append(pystray.MenuItem("设置…", lambda: self._on_open_settings()))
+        if self._on_open_onboarding:
+            items.append(pystray.MenuItem("首次引导…", lambda: self._on_open_onboarding()))
         items.append(pystray.Menu.SEPARATOR)
         if self._on_restart:
             items.append(pystray.MenuItem("重启程序", lambda: self._on_restart()))
         items.append(pystray.MenuItem("退出", lambda: self._on_quit()))
         return pystray.Menu(*items)
 
-    def set_info(self, lines: list[str]) -> None:
-        """更新菜单顶部的信息行（引擎 / 热键等）。"""
-        self._info_lines = list(lines)
+    def refresh(self) -> None:
         try:
             self._icon.menu = self._build_menu()
             self._icon.update_menu()
-        except Exception:  # pragma: no cover
+        except Exception:
             pass
 
-    def set_status(self, status: str, tooltip: str | None = None) -> None:
+    def set_info(self, lines: list[str]) -> None:
+        self._info_lines = list(lines)
+        self.refresh()
+
+    def set_status(self, status: str, tooltip: str | None = None, info: list[str] | None = None) -> None:
         try:
             self._icon.icon = _icon_image(_COLORS.get(status, _COLORS["idle"]))
             if tooltip:
                 self._icon.title = tooltip
-        except Exception:  # pragma: no cover - 托盘不可用时忽略
+            if info is not None:
+                self._info_lines = list(info)
+                self.refresh()
+        except Exception:
             pass
 
     def run(self) -> None:
@@ -163,5 +125,5 @@ class TrayController:
     def stop(self) -> None:
         try:
             self._icon.stop()
-        except Exception:  # pragma: no cover
+        except Exception:
             pass

@@ -6,7 +6,7 @@ import sys
 
 from PIL import Image, ImageDraw
 
-from .config import PROJECT_ROOT
+from . import paths
 
 
 def draw_icon(size: int = 256) -> Image.Image:
@@ -30,7 +30,7 @@ def draw_icon(size: int = 256) -> Image.Image:
 
 def main() -> int:
     sizes = [(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
-    out = PROJECT_ROOT / "voiceinput.ico"
+    out = paths.app_root() / "voiceinput.ico"
     draw_icon(256).save(out, sizes=sizes)
     print(f"已生成图标：{out}")
     return 0

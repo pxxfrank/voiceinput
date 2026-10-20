@@ -1,0 +1,293 @@
+{
+  "time": "2026-10-20 10:52:50",
+  "os": "sys.getwindowsversion(major=10, minor=0, build=19045, platform=2, service_pack='')",
+  "python": "3.14.5 (main, May 10 2026, 20:29:46) [MSC v.1944 64 bit (AMD64)]",
+  "cpu_count": 72,
+  "stream_model": "models\\streaming-asr\\sherpa-onnx-x-asr-480ms-streaming-zipformer-transducer-zh-en-punct-int8-2026-06-05",
+  "offline_model": "models\\offline-asr\\sense-voice",
+  "llm_model": "models\\llm\\Qwen3.5-2B-Q4_K_M.gguf",
+  "basic_memory_mb": 559.4,
+  "smart_memory_mb": 1970.3,
+  "wavs": [
+    {
+      "wav": "0.wav",
+      "duration_s": 10.05,
+      "first_partial_ms": 1011.1,
+      "partial_updates": 24,
+      "update_interval_ms": {
+        "n": 23,
+        "p50": 241.7,
+        "p95": 1212.55,
+        "min": 133.67,
+        "max": 2178.9,
+        "avg": 372.68
+      },
+      "segments": 3,
+      "decode_s": 1.426,
+      "wall_s": 10.6,
+      "cpu_percent": 131.5,
+      "rtf": 0.142,
+      "stream_text": "昨天是 Monday Today is 礼拜二 The day after tomorrow 是星期三",
+      "review_text": "昨天是monday，today is礼拜2，the day after tomorrow是星期三。",
+      "review_ms": 509.6,
+      "review_rtf": 0.051,
+      "merge_source": "review"
+    },
+    {
+      "wav": "1.wav",
+      "duration_s": 5.1,
+      "first_partial_ms": 872.2,
+      "partial_updates": 14,
+      "update_interval_ms": {
+        "n": 13,
+        "p50": 238.2,
+        "p95": 363.77,
+        "min": 134.17,
+        "max": 771.67,
+        "avg": 268.63
+      },
+      "segments": 1,
+      "decode_s": 0.91,
+      "wall_s": 5.62,
+      "cpu_percent": 154.7,
+      "rtf": 0.178,
+      "stream_text": "这是第一种， 第二种叫呃与 always always 什么意思啊",
+      "review_text": "这是第一种。第二种叫呃与OSOS什么意思啊？",
+      "review_ms": 285.4,
+      "review_rtf": 0.056,
+      "merge_source": "streaming"
+    },
+    {
+      "wav": "2.wav",
+      "duration_s": 4.69,
+      "first_partial_ms": 1173.3,
+      "partial_updates": 14,
+      "update_interval_ms": {
+        "n": 13,
+        "p50": 239.71,
+        "p95": 364.97,
+        "min": 134.9,
+        "max": 776.31,
+        "avg": 277.91
+      },
+      "segments": 1,
+      "decode_s": 0.856,
+      "wall_s": 5.16,
+      "cpu_percent": 153.9,
+      "rtf": 0.183,
+      "stream_text": "就是平凡的啊， 不认识记下来， frequently 频繁的",
+      "review_text": "这个是平凡的啊，主然是接下来frequently平凡的。",
+      "review_ms": 283.3,
+      "review_rtf": 0.06,
+      "merge_source": "streaming"
+    },
+    {
+      "wav": "3.wav",
+      "duration_s": 8.83,
+      "first_partial_ms": 491.7,
+      "partial_updates": 20,
+      "update_interval_ms": {
+        "n": 19,
+        "p50": 242.29,
+        "p95": 282.76,
+        "min": 160.65,
+        "max": 504.33,
+        "avg": 254.17
+      },
+      "segments": 1,
+      "decode_s": 1.343,
+      "wall_s": 9.43,
+      "cpu_percent": 130.0,
+      "rtf": 0.152,
+      "stream_text": "第一句是个什么时态？ 加了 yes 是一般现代时， 对， 我们把它食材写上",
+      "review_text": "第一句是个什么时态，加了ES是一般现代时对，后把它时态写上去。",
+      "review_ms": 448.1,
+      "review_rtf": 0.051,
+      "merge_source": "streaming"
+    },
+    {
+      "wav": "en.wav",
+      "duration_s": 7.15,
+      "first_partial_ms": 667.6,
+      "partial_updates": 23,
+      "update_interval_ms": {
+        "n": 22,
+        "p50": 243.49,
+        "p95": 279.73,
+        "min": 137.7,
+        "max": 371.37,
+        "avg": 242.69
+      },
+      "segments": 1,
+      "decode_s": 1.087,
+      "wall_s": 7.72,
+      "cpu_percent": 136.8,
+      "rtf": 0.152,
+      "stream_text": "The tribal chief then called for the boy and presented him with fifty pieces of gold.",
+      "review_text": "The tribal chieftain called for the boy and presented him with 50 pieces of code.",
+      "review_ms": 382.6,
+      "review_rtf": 0.053,
+      "merge_source": "streaming"
+    },
+    {
+      "wav": "ja.wav",
+      "duration_s": 7.2,
+      "first_partial_ms": 1165.6,
+      "partial_updates": 19,
+      "update_interval_ms": {
+        "n": 18,
+        "p50": 242.43,
+        "p95": 361.53,
+        "min": 143.22,
+        "max": 766.78,
+        "avg": 269.15
+      },
+      "segments": 1,
+      "decode_s": 1.084,
+      "wall_s": 7.71,
+      "cpu_percent": 132.8,
+      "rtf": 0.151,
+      "stream_text": "N Chuga quabento se de model cosuvenu cahambangu kau",
+      "review_text": "うちの中学は弁当制で持っていきない場合は50円の学校販売のパンを買う。",
+      "review_ms": 396.1,
+      "review_rtf": 0.055,
+      "merge_source": "streaming"
+    },
+    {
+      "wav": "ko.wav",
+      "duration_s": 4.61,
+      "first_partial_ms": 968.4,
+      "partial_updates": 4,
+      "update_interval_ms": {
+        "n": 3,
+        "p50": 242.47,
+        "p95": 362.41,
+        "min": 137.45,
+        "max": 362.41,
+        "avg": 247.44
+      },
+      "segments": 1,
+      "decode_s": 0.687,
+      "wall_s": 5.29,
+      "cpu_percent": 126.4,
+      "rtf": 0.149,
+      "stream_text": "就跟班前哥哥",
+      "review_text": "조금만 생각을 하면서 살면 훨씬 편할 거야.",
+      "review_ms": 262.4,
+      "review_rtf": 0.057,
+      "merge_source": "streaming"
+    },
+    {
+      "wav": "yue.wav",
+      "duration_s": 5.15,
+      "first_partial_ms": 780.1,
+      "partial_updates": 11,
+      "update_interval_ms": {
+        "n": 10,
+        "p50": 244.55,
+        "p95": 763.48,
+        "min": 158.54,
+        "max": 763.48,
+        "avg": 314.86
+      },
+      "segments": 1,
+      "decode_s": 0.771,
+      "wall_s": 5.72,
+      "cpu_percent": 134.3,
+      "rtf": 0.15,
+      "stream_text": "那个几度表达都意思",
+      "review_text": "呢几个字都表达唔到我想讲嘅意思。",
+      "review_ms": 241.3,
+      "review_rtf": 0.047,
+      "merge_source": "streaming"
+    },
+    {
+      "wav": "zh.wav",
+      "duration_s": 5.59,
+      "first_partial_ms": 1009.5,
+      "partial_updates": 14,
+      "update_interval_ms": {
+        "n": 13,
+        "p50": 241.84,
+        "p95": 667.99,
+        "min": 138.86,
+        "max": 764.62,
+        "avg": 305.84
+      },
+      "segments": 1,
+      "decode_s": 0.866,
+      "wall_s": 6.09,
+      "cpu_percent": 139.3,
+      "rtf": 0.155,
+      "stream_text": "开放时间早上九点至下午五点",
+      "review_text": "开饭时间早上9点至下午5点。",
+      "review_ms": 320.7,
+      "review_rtf": 0.057,
+      "merge_source": "review"
+    }
+  ],
+  "llm": {
+    "load_ms": 10516.0,
+    "first_token_ms": 263.8,
+    "refines": [
+      {
+        "text": "嗯那个我们今天呢主要是讨论一下 agent memory 的设计方案。",
+        "latency_ms": 2660.0,
+        "ok": true,
+        "output": "嗯，今天主要讨论一下 agent memory 的设计方案。"
+      },
+      {
+        "text": "这个功能我可能大概下周能做完，但是还不太确定。",
+        "latency_ms": 2245.8,
+        "ok": true,
+        "output": "这个功能我可能大概下周能做完，但是还不太确定。"
+      },
+      {
+        "text": "我们先把需求梳理一下然后设计接口再写测试最后上线大概需要三天时间。",
+        "latency_ms": 2660.7,
+        "ok": true,
+        "output": "我们先把需求梳理一下，然后设计接口，再写测试，最后上线，大概需要三天时间。"
+      }
+    ],
+    "latency": {
+      "n": 3,
+      "p50": 2660.0,
+      "p95": 2660.7,
+      "min": 2245.8,
+      "max": 2660.7,
+      "avg": 2522.17
+    },
+    "memory_mb": 1970.3,
+    "model": "Qwen3.5-2B-Q4_K_M.gguf",
+    "threads": 12
+  },
+  "asr_load_ms": 8463.8,
+  "review_load_ms": 2677.1,
+  "baseline_memory_mb": 46.9,
+  "aggregate": {
+    "first_partial_ms": {
+      "n": 9,
+      "p50": 968.4,
+      "p95": 1173.3,
+      "min": 491.7,
+      "max": 1173.3,
+      "avg": 904.39
+    },
+    "rtf": {
+      "n": 9,
+      "p50": 0.15,
+      "p95": 0.18,
+      "min": 0.14,
+      "max": 0.18,
+      "avg": 0.16
+    },
+    "review_ms": {
+      "n": 9,
+      "p50": 320.7,
+      "p95": 509.6,
+      "min": 241.3,
+      "max": 509.6,
+      "avg": 347.72
+    }
+  }
+}

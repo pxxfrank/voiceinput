@@ -1,13 +1,9 @@
-# 运行时依赖
-sherpa-onnx>=1.10.0
-sounddevice>=0.4.6
-numpy>=1.24
-soxr>=0.3.7
-keyboard>=0.13.5
-pyperclip>=1.8.2
-pystray>=0.19.5
-Pillow>=10.0.0
-PyYAML>=6.0
-
-# 可选：如需多语种 / 更高精度，取消下面注释并在 config.yaml 里把 engine 改成 whisper
-# faster-whisper>=1.0.0
+# 运行时依赖（版本固定；由安装包内置，最终用户无需安装）
+sherpa-onnx==1.13.8
+sounddevice==0.5.6
+numpy==2.5.3
+soxr==1.1.0
+keyboard==0.13.5
+pystray==0.19.5
+Pillow==12.3.0
+PyYAML==6.0.3

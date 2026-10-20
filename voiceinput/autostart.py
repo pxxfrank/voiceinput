@@ -12,7 +12,7 @@ import os
 import sys
 from pathlib import Path
 
-from .config import PROJECT_ROOT
+from . import paths
 
 STARTUP_DIR = (
     Path(os.environ.get("APPDATA", ""))
@@ -22,7 +22,7 @@ STARTUP_DIR = (
     / "Programs"
     / "Startup"
 )
-SCRIPT_NAME = "voiceinput.vbs"
+SCRIPT_NAME = "LocalVoiceInput.vbs"
 
 
 def _launch_target() -> tuple[str, str]:
@@ -38,10 +38,10 @@ def _launch_target() -> tuple[str, str]:
 
 def _vbs(exe: str, args: str) -> str:
     cmd = f'"{exe}"' + (f" {args}" if args else "")
-    cmd_vbs = cmd.replace('"', '""')  # VBS 字符串内转义双引号
-    wd_vbs = str(PROJECT_ROOT).replace('"', '""')
+    cmd_vbs = cmd.replace('"', '""')
+    wd_vbs = str(paths.app_root()).replace('"', '""')
     return (
-        "' voiceinput 开机自启脚本（由程序自动生成，删除本文件即可关闭自启）\n"
+        "' LocalVoiceInput 开机自启脚本（由程序自动生成，删除本文件即可关闭自启）\n"
         'Set sh = CreateObject("WScript.Shell")\n'
         f'sh.CurrentDirectory = "{wd_vbs}"\n'
         f'sh.Run "{cmd_vbs}", 0, False\n'
