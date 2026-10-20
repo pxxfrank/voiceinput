@@ -50,7 +50,6 @@ def main() -> int:
     parser.add_argument("--version", required=True)
     parser.add_argument("--update-exe", default="release/LocalVoiceInput-Update-x64.exe")
     parser.add_argument("--full-exe", default="release/LocalVoiceInput-Setup-x64.exe")
-    parser.add_argument("--portable", default="release/LocalVoiceInput-Portable-x64.zip")
     parser.add_argument("--base-url", default="")
     parser.add_argument("--notes-url", default="")
     parser.add_argument("--private-key", default="keys/update_ed25519.pem")
@@ -74,9 +73,6 @@ def main() -> int:
     full = Path(args.full_exe)
     if full.exists():
         payload["full_installer"] = asset(full, base_url)
-    portable = Path(args.portable)
-    if portable.exists():
-        payload["portable"] = asset(portable, base_url)
 
     key_path = Path(args.private_key)
     if not key_path.exists():

@@ -16,8 +16,6 @@ Windows 11 x64 本地离线语音输入法：流式识别、识别复核、本�
 
 不需要安装 Python、.NET、VC++、CUDA、ONNX Runtime、llama.cpp、Ollama、FFmpeg、Git 或任何模型。
 
-便携版：解压 `LocalVoiceInput-Portable-x64.zip`，运行 `LocalVoiceInput.exe`；数据保存在程序目录 `data\`。
-
 ## 功能
 
 - **双模式**：极速输入（边说边出字、片段结束即上屏，不调用 LLM）；智能精修（长口述，面板确认后插入）。
@@ -36,10 +34,10 @@ Windows 11 x64 本地离线语音输入法：流式识别、识别复核、本�
 voiceinput/            应用源码（audio/asr/refine/input/storage/ui）
 models/                流式 ASR、复核 ASR、Qwen3.5 GGUF、llama.cpp、manifest.json
 packaging/             Inno Setup 安装脚本、版本信息、README
-scripts/               build-release.ps1、perf_harness.py、make_zip.py 等
+scripts/               build-release.ps1、perf_harness.py 等
 tests/                 单元测试、真实模型集成测试、E2E 辅助
 docs/                  架构、模型清单、测试/性能/部署报告、使用指南
-release/               Setup.exe、Portable ZIP、SHA256SUMS、ReleaseNotes
+release/               Setup.exe、Update.exe、update.json、SHA256SUMS、ReleaseNotes
 ```
 
 ## 开发
@@ -59,11 +57,11 @@ uv pip install --python .venv\Scripts\python.exe -r requirements-dev.txt
 .venv\Scripts\python.exe -m pytest tests -q
 $env:VOICEINPUT_RUN_INTEGRATION="1"; .venv\Scripts\python.exe -m pytest tests/test_integration_real.py -q
 
-# 一键构建（测试 → PyInstaller → 模型整理 → Portable ZIP → Setup.exe → SHA256）
+# 一键构建（测试 → PyInstaller → 模型整理 → Setup.exe → SHA256）
 powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1
 
-# 后续小版本更新（不含模型，复用已安装 models，约 40 MB）
-powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1 -NoModels -SkipZip
+# 后续小版本更新（不含模型，复用已安装 models，约 43 MB）
+powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1 -NoModels
 
 # 性能
 .venv\Scripts\python.exe scripts\perf_harness.py
@@ -89,7 +87,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1 -NoModels -Sk
 
 ## 验证状态（诚实说明）
 
-- 已实际验证：安装/卸载、Portable、真实模型流式识别、复核、LLM 精修、真实文本框插入、剪贴板恢复、焦点变化保护、非文本剪贴板回退、模型缺失回退、断网审计。
+- 已实际验证：安装/卸载、真实模型流式识别、复核、LLM 精修、真实文本框插入、剪贴板恢复、焦点变化保护、非文本剪贴板回退、模型缺失回退、断网审计。
 - 未验证：真实物理麦克风、Windows 11、目标 ThinkPad 硬件、3 小时长稳、干净虚拟机环境。
 - 部分性能目标未达标：首字延迟 P50 约 0.97 s（目标 0.8 s）；LLM 精修 P50 约 2.66 s（目标 1–2 s）；智能模式内存约 2.5 GB（基础模式 559 MB 达标）。详见性能报告。
 

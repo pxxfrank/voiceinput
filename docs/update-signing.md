@@ -43,7 +43,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1 -NoModels -Sk
 2. 生成签名更新清单：
 
 ```powershell
-python scripts\make_update_manifest.py --version 1.1.0 `
+python scripts\make_update_manifest.py --version 1.2.0 `
   --update-exe release\LocalVoiceInput-Update-x64.exe `
   --full-exe release\LocalVoiceInput-Setup-x64.exe `
   --out release\update.json
@@ -52,7 +52,6 @@ python scripts\make_update_manifest.py --version 1.1.0 `
 3. 创建 GitHub Release，上传：
    - `LocalVoiceInput-Setup-x64.exe`
    - `LocalVoiceInput-Update-x64.exe`
-   - `LocalVoiceInput-Portable-x64.zip`
    - `ReleaseNotes.md`
    - `SHA256SUMS.txt` / `SHA256SUMS-update.txt`
    - `update.json`

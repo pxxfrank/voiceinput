@@ -6,10 +6,9 @@
 
 | 文件 | 大小 | SHA-256 |
 |---|---:|---|
-| LocalVoiceInput-Setup-x64.exe | 1546.5 MB | `75c67215e76ffe0fbd9d10a024b4839adc2319508756649b8bb9f675026f401a` |
-| LocalVoiceInput-Portable-x64.zip | 1768.2 MB | `9d8626244c4bbb1778a23c127195ee393af88f923e69ec489bd77e4df80c1382` |
-| LocalVoiceInput-Update-x64.exe（增量，不含模型） | 42.8 MB | `0ca2093ae4a65af759b0561f39db8d42922db844637eb2e404ada41794ea1528` |
-| update.json（签名更新清单） | 1.1 KB | `d22520240696ee1a84a7d11d80d3ada796be5ea2f9b797b099e5ed098ba85a70` |
+| LocalVoiceInput-Setup-x64.exe | 1546.5 MB | `172efa2524e0f56c2fba02295b52ed4d7db8cafbf16d042590831067215136b4` |
+| LocalVoiceInput-Update-x64.exe（增量，不含模型） | 42.8 MB | `7f88fa73148caad25cb5b39c9034f7c033ba637ceeffd4de770f26ecb5022cdc` |
+| update.json（签名更新清单） | 1.1 KB | `b01f43cd135ae6609e03ee283dba0837427b3c01d80f9c88a17cb376375d2424` |
 
 ## 本轮增强
 
@@ -27,7 +26,7 @@
 - 识别复核：SenseVoice-Small INT8，按需调用、超时/忙时回退，不假设复核一定更正确。
 - 本地 LLM：Qwen3.5-2B Q4_K_M + llama.cpp；结构化 JSON、语义守卫、版本校验、失败回退、空闲卸载。
 - 安全上屏：目标窗口/焦点校验；焦点变化不误插入；剪贴板快照/序列号保护；非文本剪贴板自动改用 Unicode 直输。
-- 完整交付：自包含 Setup.exe（无需任何运行时）、Portable ZIP、模型清单/SHA-256、许可证、测试/性能/部署报告。
+- 完整交付：自包含 Setup.exe（无需任何运行时）、模型清单/SHA-256、许可证、测试/性能/部署报告。
 - 数据分离：安装目录只读；配置/历史/日志在 `%LOCALAPPDATA%\LocalVoiceInput`；卸载保留用户数据。
 
 ## 模型
@@ -41,7 +40,7 @@
 ## 验证摘要
 
 - 单元测试 69 通过；UI 冒烟 3 通过；真实模型集成 2 通过。
-- 安装/卸载、Portable、真实 WAV 上屏、剪贴板恢复、焦点变化保护、非文本剪贴板回退、模型缺失回退、断网审计均实际执行。
+- 安装/卸载、真实 WAV 上屏、剪贴板恢复、焦点变化保护、非文本剪贴板回退、模型缺失回退、断网审计均实际执行。
 - 未验证：真实物理麦克风、Windows 11、目标 ThinkPad 硬件、3 小时长稳、全新干净虚拟机。
 
 ## 性能（本机虚拟机实测，非目标硬件）

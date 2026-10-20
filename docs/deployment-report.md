@@ -4,11 +4,10 @@
 
 | 文件 | 大小 | SHA-256 |
 |---|---:|---|
-| `release/LocalVoiceInput-Setup-x64.exe` | 1546.5 MB | `75c67215e76ffe0fbd9d10a024b4839adc2319508756649b8bb9f675026f401a` |
-| `release/LocalVoiceInput-Portable-x64.zip` | 1768.2 MB | `9d8626244c4bbb1778a23c127195ee393af88f923e69ec489bd77e4df80c1382` |
-| `release/LocalVoiceInput-Update-x64.exe` | 42.8 MB | `0ca2093ae4a65af759b0561f39db8d42922db844637eb2e404ada41794ea1528` |
-| `release/update.json` | 1.1 KB | `d22520240696ee1a84a7d11d80d3ada796be5ea2f9b797b099e5ed098ba85a70` |
-| `release/SHA256SUMS.txt` | — | 上述两行 |
+| `release/LocalVoiceInput-Setup-x64.exe` | 1546.5 MB | `172efa2524e0f56c2fba02295b52ed4d7db8cafbf16d042590831067215136b4` |
+| `release/LocalVoiceInput-Update-x64.exe` | 42.8 MB | `7f88fa73148caad25cb5b39c9034f7c033ba637ceeffd4de770f26ecb5022cdc` |
+| `release/update.json` | 1.1 KB | `b01f43cd135ae6609e03ee283dba0837427b3c01d80f9c88a17cb376375d2424` |
+| `release/SHA256SUMS.txt` | — | 上述文件 |
 
 - 版本：**1.2.0**
 - Release：<https://github.com/pxxfrank/voiceinput/releases/tag/v1.2.0>
@@ -61,7 +60,7 @@
   runtime\
 ```
 
-便携模式（ZIP 内 `portable.flag`）：数据保存在程序目录 `data\`。
+便携模式已停止发布；安装目录与用户数据目录分离。
 
 ## 4. 构建流程（可重复）
 
@@ -71,14 +70,13 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1
 
 脚本执行：
 
-1. 检查运行依赖与模型清单（`models/manifest.json`，45 个文件 SHA-256）。
-2. 运行单元测试（49 项）。
+1. 检查运行依赖与模型清单（`models/manifest.json`，46 个文件 SHA-256）。
+2. 运行单元测试（69 项）。
 3. PyInstaller `--clean` 打包（`voiceinput.spec`）。
 4. 整理发布目录：exe + `_internal` + `models` + `licenses` + `README`。
 5. 发布目录 `--diagnose` 自检。
-6. 生成 Portable ZIP（ZIP64，附加 `portable.flag`）。
-7. Inno Setup 编译 `Setup.exe`。
-8. 生成 `release/SHA256SUMS.txt`。
+6. Inno Setup 编译 `Setup.exe`。
+7. 生成 `release/SHA256SUMS.txt`。
 
 模型准备（构建期联网，已存在则跳过）：
 
@@ -97,13 +95,13 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1
 powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1
 
 # 增量更新包（不含 models，复用已安装模型）
-powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1 -NoModels -SkipZip
+powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1 -NoModels
 ```
 
 产物：
 
 - `release\LocalVoiceInput-Setup-x64.exe`：完整包（约 1.5 GB）
-- `release\LocalVoiceInput-Update-x64.exe`：增量包（当前约 **40 MB**）
+- `release\LocalVoiceInput-Update-x64.exe`：增量包（当前约 **43 MB**）
 - `release\SHA256SUMS-update.txt`：增量包校验值
 
 增量安装器在 `PrepareToInstall` 中检查目标目录已有的
@@ -152,8 +150,6 @@ python scripts\make_update_manifest.py --version 1.1.0 `
 | 剪贴板恢复 | 通过 |
 | 卸载 | 退出 0，安装目录删除，开始菜单快捷方式移除 |
 | 用户数据保留 | 通过（`%LOCALAPPDATA%\LocalVoiceInput` 仍存在） |
-| Portable ZIP 完整性 | `testzip` 无错误 |
-| Portable 解压运行 | 退出 0，`portable=True`，数据在 `data\` |
 
 ## 7. 未完成/风险
 

@@ -8,7 +8,7 @@
 - 设置：托盘 → 设置…；也可以运行 LocalVoiceInput.exe --settings。
 - 诊断：LocalVoiceInput.exe --diagnose
 - 屏幕阅读 / 长文本：智能精修面板中确认后插入。
-- 数据目录：%LOCALAPPDATA%\LocalVoiceInput（便携模式为程序目录下 data\）
+- 数据目录：%LOCALAPPDATA%\LocalVoiceInput
 - 安装目录：%LOCALAPPDATA%\Programs\LocalVoiceInput
 
 全部语音识别与文本精修均在本机完成，不联网、不上传录音或文字。

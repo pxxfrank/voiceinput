@@ -65,7 +65,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1
 | 智能精修 E2E | 真实 WAV → 复核 → LLM → 面板 | 测试报告 |
 | 打包 exe | `--diagnose` / `--selftest` / 真实 WAV 上屏 | 测试报告 |
 | 安装包 | 静默安装/卸载退出 0；开始菜单快捷方式；数据保留 | `docs/deployment-report.md` |
-| Portable ZIP | testzip 通过；diagnose 0；portable=True | 部署报告 |
+| 安装包 | 完整安装/卸载通过 | 部署报告 |
 | 焦点变化 | `target_changed`，不向新窗口插入 | 测试报告 |
 | 非文本剪贴板 | 图片保留，改用 Unicode 直输 | 测试报告 |
 | LLM 缺失 | 回退确定性文本，文本不丢失 | 测试报告 |
@@ -79,9 +79,8 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1
 
 | 文件 | 大小 | SHA-256 |
 |---|---:|---|
-| `release/LocalVoiceInput-Setup-x64.exe` | 1546.5 MB | `75c67215e76ffe0fbd9d10a024b4839adc2319508756649b8bb9f675026f401a` |
-| `release/LocalVoiceInput-Portable-x64.zip` | 1768.2 MB | `9d8626244c4bbb1778a23c127195ee393af88f923e69ec489bd77e4df80c1382` |
-| `release/LocalVoiceInput-Update-x64.exe` | 42.8 MB | `0ca2093ae4a65af759b0561f39db8d42922db844637eb2e404ada41794ea1528` |
+| `release/LocalVoiceInput-Setup-x64.exe` | 1546.5 MB | `172efa2524e0f56c2fba02295b52ed4d7db8cafbf16d042590831067215136b4` |
+| `release/LocalVoiceInput-Update-x64.exe` | 42.8 MB | `7f88fa73148caad25cb5b39c9034f7c033ba637ceeffd4de770f26ecb5022cdc` |
 | `release/SHA256SUMS.txt` | — | 上述 + ReleaseNotes |
 
 ## 6. 未解决 / 未验证
