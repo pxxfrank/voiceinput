@@ -328,6 +328,8 @@ class SettingsApp:
         self._hotkey_row(card, "撤销上屏", self.var["undo_key"])
         self.var["cancel_key"] = tk.StringVar()
         self._hotkey_row(card, "取消输入", self.var["cancel_key"])
+        self.var["hotkey_status"] = tk.StringVar(value="捕获按键后会做一次注册测试；热键在保存并重启后生效。")
+        tk.Label(card, textvariable=self.var["hotkey_status"], bg=_CARD, fg=_MUTED, anchor="w", wraplength=700, justify="left").pack(fill="x", pady=(10, 0))
         self._note(card, "点「捕获按键」后直接按下目标键。热键在保存并重启后生效。")
 
     def _hotkey_row(self, card, label: str, var: tk.StringVar) -> None:
@@ -522,8 +524,20 @@ class SettingsApp:
 
     def _captured(self, var: tk.StringVar, button: ttk.Button, name: str | None) -> None:
         button.configure(state="normal", text="捕获按键")
-        if name:
-            var.set(name)
+        if not name:
+            self.var["hotkey_status"].set("没有捕获到按键，请重试")
+            return
+        var.set(name)
+        if "hotkey_status" not in self.var:
+            return
+        try:
+            import keyboard
+
+            handler = keyboard.add_hotkey(name, lambda: None)
+            keyboard.remove_hotkey(handler)
+            self.var["hotkey_status"].set(f"已捕获 {name.upper()}，注册测试通过")
+        except Exception as exc:
+            self.var["hotkey_status"].set(f"已捕获 {name.upper()}，但可能被占用：{exc}")
 
     def _toggle_autostart(self) -> None:
         try:

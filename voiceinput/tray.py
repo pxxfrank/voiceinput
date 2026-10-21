@@ -123,6 +123,12 @@ class TrayController:
         except Exception:
             pass
 
+    def notify(self, message: str, title: str = "本地语音输入") -> None:
+        try:
+            self._icon.notify(message, title)
+        except Exception:
+            pass
+
     def run(self) -> None:
         self._icon.run()
 

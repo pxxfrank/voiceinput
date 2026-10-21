@@ -43,7 +43,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1 -NoModels
 2. 生成签名更新清单：
 
 ```powershell
-python scripts\make_update_manifest.py --version 1.2.0 `
+python scripts\make_update_manifest.py --version 1.3.0 `
   --update-exe release\LocalVoiceInput-Update-x64.exe `
   --full-exe release\LocalVoiceInput-Setup-x64.exe `
   --out release\update.json

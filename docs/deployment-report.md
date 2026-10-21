@@ -4,13 +4,13 @@
 
 | 文件 | 大小 | SHA-256 |
 |---|---:|---|
-| `release/LocalVoiceInput-Setup-x64.exe` | 1546.5 MB | `172efa2524e0f56c2fba02295b52ed4d7db8cafbf16d042590831067215136b4` |
-| `release/LocalVoiceInput-Update-x64.exe` | 42.8 MB | `7f88fa73148caad25cb5b39c9034f7c033ba637ceeffd4de770f26ecb5022cdc` |
-| `release/update.json` | 1.1 KB | `b01f43cd135ae6609e03ee283dba0837427b3c01d80f9c88a17cb376375d2424` |
+| `release/LocalVoiceInput-Setup-x64.exe` | 1546.5 MB | `9710ca3822733ef254a88da3644d21815c3e4cd7a7c515f36b9610ea505ff9af` |
+| `release/LocalVoiceInput-Update-x64.exe` | 42.8 MB | `4b1c3e35c3ccb1a215b861c779e93d0bb9cf35e219e2f812c6baa29d00fb82a7` |
+| `release/update.json` | 1.1 KB | `44e43ccb98181985607773ed9db3abff663aeedd242721d520f8fe0e476358fe` |
 | `release/SHA256SUMS.txt` | — | 上述文件 |
 
-- 版本：**1.2.0**
-- Release：<https://github.com/pxxfrank/voiceinput/releases/tag/v1.2.0>
+- 版本：**1.3.0**
+- Release：<https://github.com/pxxfrank/voiceinput/releases/tag/v1.3.0>
 - 更新清单：<https://github.com/pxxfrank/voiceinput/releases/latest/download/update.json>
 - 安装器：Inno Setup 7.1.0
 - 发布模式：自包含（PyInstaller onedir + Python 3.14.5 + native DLL + 模型）
@@ -142,7 +142,7 @@ python scripts\make_update_manifest.py --version 1.1.0 `
 |---|---|
 | Setup 静默安装到测试目录 | 退出 0，文件齐全（1768 MB） |
 | 开始菜单快捷方式 | 已创建（主程序/设置/卸载） |
-| 安装目录 `--version` | `LocalVoiceInput 1.2.0` |
+| 安装目录 `--version` | `LocalVoiceInput 1.3.0` |
 | 安装目录 `--diagnose` | 退出 0，全部模型 OK |
 | 安装目录 `--verify-models` | 退出 0（45/45） |
 | 安装目录 `--selftest --llm-test` | 退出 0（真实流式/复核/LLM） |

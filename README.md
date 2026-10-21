@@ -5,7 +5,7 @@ Windows 11 x64 本地离线语音输入法：流式识别、识别复核、本�
 
 ## 下载
 
-- [GitHub Releases · v1.2.0](https://github.com/pxxfrank/voiceinput/releases/tag/v1.2.0)
+- [GitHub Releases · v1.3.0](https://github.com/pxxfrank/voiceinput/releases/tag/v1.3.0)
 - 首次安装用完整 `LocalVoiceInput-Setup-x64.exe`；已安装用户增量更新用 `LocalVoiceInput-Update-x64.exe`（不含模型，约 43 MB）。
 
 ## 直接使用
@@ -24,6 +24,7 @@ Windows 11 x64 本地离线语音输入法：流式识别、识别复核、本�
 - **本地 LLM**：Qwen3.5-2B Q4_K_M + llama.cpp 子进程；结构化 JSON、语义守卫、版本校验、失败回退。
 - **安全输入**：目标窗口/焦点校验；焦点变化不误插入；剪贴板快照/占用校验；非文本剪贴板自动改用 Unicode 直输；终端/控制台兼容矩阵。
 - **精修审阅**：所有片段合并为一个可编辑全文；可主动「精修全文」、对比原文、手动修改，再复制或插入。
+- **易用性**：首次引导可测麦克风/回放、热键注册、上屏；加载进度可见；整理面板支持快捷键与草稿恢复。
 - **签名更新**：模型集版本校验；Ed25519 签名清单 + SHA-256 校验；无模型增量包 + 退出后安装。
 - **UI**：不抢焦点的置顶悬浮窗、精修对照面板、八页设置、首次引导、托盘、深/浅色、高 DPI。
 - **数据**：SQLite 历史/词库/统计；安装目录与用户数据分离；便携模式。

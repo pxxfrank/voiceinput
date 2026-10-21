@@ -8,7 +8,7 @@
 
 | 类型 | 命令 | 结果 |
 |---|---|---|
-| 单元测试 | `python -m pytest tests -q` | **69 passed** |
+| 单元测试 | `python -m pytest tests -q` | **71 passed** |
 | UI 冒烟（Tk） | `VOICEINPUT_UI_TESTS=1 python -m pytest tests/test_ui_smoke.py -q` | **3 passed** |
 | 真实模型集成 | `VOICEINPUT_RUN_INTEGRATION=1 python -m pytest tests/test_integration_real.py -q` | **2 passed**（24.3 s） |
 | 真实音频自检 | `python -m voiceinput --selftest --llm-test` | 通过（流式/复核/LLM 均输出真实文本） |
@@ -35,6 +35,7 @@
 | `test_compat.py` | 终端/Windows Terminal/经典控制台/普通编辑框输入策略 |
 | `test_diff.py` | 逐条接受/拒绝修改、字符级 diff |
 | `test_update.py` | 签名更新清单校验、版本比较、篡改拒绝 |
+| `test_drafts.py` | 整理结果草稿保存/读取/清理 |
 | `test_model_set.py` | 模型集 marker/manifest 匹配、旧版兼容、不匹配拒绝 |
 
 ## 3. 端到端（E2E）证据

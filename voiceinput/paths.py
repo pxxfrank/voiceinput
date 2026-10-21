@@ -1,4 +1,4 @@
-"""应用路径与版本常量。
+﻿"""应用路径与版本常量。
 
 安装目录与用户数据目录严格分离：
 - 安装目录（只读）：PyInstaller 解包目录 / 源码根目录，包含 exe、runtimes、models、licenses
@@ -14,7 +14,7 @@ from pathlib import Path
 APP_ID = "LocalVoiceInput"
 APP_NAME = "本地语音输入"
 APP_NAME_EN = "LocalVoiceInput"
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 MODEL_SET = "2026-10-20.1"
 MUTEX_NAME = "Local\\LocalVoiceInput-singleton"
 SETTINGS_RESTART_EXIT = 42

@@ -1,6 +1,6 @@
-"""LocalVoiceInput：本地离线语音输入（流式 ASR + 复核 + LLM 精修）。
+﻿"""LocalVoiceInput：本地离线语音输入（流式 ASR + 复核 + LLM 精修）。
 
 所有识别与精修均在本机完成，不产生网络请求，不上传录音或文字。
 """
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"

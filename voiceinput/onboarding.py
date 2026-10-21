@@ -32,11 +32,13 @@ class Onboarding:
         self.test_audio = None
         self.test_engine = None
         self._busy = False
+        self._check_recorder = None
+        self._level_job = None
         self.exit_code = 0
 
         root.title("欢迎使用本地语音输入")
-        root.geometry("640x500")
-        root.minsize(600, 460)
+        root.geometry("660x560")
+        root.minsize(620, 520)
         root.configure(bg=_BG)
         try:
             root.attributes("-topmost", True)
@@ -129,8 +131,15 @@ class Onboarding:
         combo = ttk.Combobox(row, textvariable=self.mic_var, values=names, state="readonly", width=42)
         combo.pack(side="left", fill="x", expand=True)
         self.mic_status = tk.StringVar(value="点击「检查麦克风」，对着麦克风说一句话。")
-        tk.Label(card, textvariable=self.mic_status, bg=_CARD, fg=_MUTED, anchor="w", justify="left", wraplength=520).pack(fill="x", pady=(14, 6))
-        ttk.Button(card, text="检查麦克风", command=self._check_mic).pack(anchor="w")
+        tk.Label(card, textvariable=self.mic_status, bg=_CARD, fg=_MUTED, anchor="w", justify="left", wraplength=540).pack(fill="x", pady=(14, 6))
+        self.mic_level = ttk.Progressbar(card, maximum=100, mode="determinate")
+        self.mic_level.pack(fill="x", pady=(0, 8))
+        bar = tk.Frame(card, bg=_CARD)
+        bar.pack(fill="x")
+        self.mic_check_btn = ttk.Button(bar, text="检查麦克风（2 秒）", command=self._check_mic)
+        self.mic_check_btn.pack(side="left")
+        self.mic_play_btn = ttk.Button(bar, text="回放", command=self._play_mic, state="disabled")
+        self.mic_play_btn.pack(side="left", padx=8)
         self._nav(next_text="下一步")
 
     def _device_id(self) -> int | None:
@@ -144,15 +153,21 @@ class Onboarding:
         if self._busy:
             return
         self._busy = True
+        self.mic_check_btn.configure(state="disabled")
+        self.mic_play_btn.configure(state="disabled")
+        self.test_audio = None
         self.mic_status.set("正在检查… 请说话（2 秒）")
         device = self._device_id()
 
         def worker() -> None:
             try:
                 rec = Recorder(device=device, max_duration=2.5)
+                self._check_recorder = rec
                 rec.start()
+                self.root.after(0, self._poll_mic_level)
                 time.sleep(2.0)
                 data = rec.stop()
+                self._check_recorder = None
             except Exception as exc:
                 self.root.after(0, lambda: self._mic_done(None, f"无法打开麦克风：{exc}\n请在 Windows 设置 → 隐私和安全性 → 麦克风中允许桌面应用访问。"))
                 return
@@ -160,22 +175,61 @@ class Onboarding:
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def _poll_mic_level(self) -> None:
+        rec = self._check_recorder
+        if rec is None:
+            return
+        try:
+            db = float(rec.level_db)
+            # -60 dB → 0，0 dB → 100
+            self.mic_level["value"] = max(0.0, min(100.0, (db + 60.0) * 100.0 / 60.0))
+        except Exception:
+            pass
+        try:
+            self._level_job = self.root.after(80, self._poll_mic_level)
+        except Exception:
+            self._level_job = None
+
     def _mic_done(self, data, error: str | None) -> None:
         self._busy = False
+        if self._level_job:
+            try:
+                self.root.after_cancel(self._level_job)
+            except Exception:
+                pass
+            self._level_job = None
+        try:
+            self.mic_check_btn.configure(state="normal")
+        except Exception:
+            return
         if error:
             self.mic_status.set(error)
             return
         if data is None or len(data) == 0:
             self.mic_status.set("没有录到音频。请检查麦克风是否被其他程序占用。")
             return
+        self.test_audio = data
+        self.mic_play_btn.configure(state="normal")
         import numpy as np
 
         rms = float(np.sqrt(np.mean(np.asarray(data, dtype=np.float64) ** 2)))
         db = 20 * np.log10(rms + 1e-12)
         if db > -45:
-            self.mic_status.set(f"检测到声音（{db:.0f} dB），麦克风工作正常。")
+            self.mic_status.set(f"检测到声音（{db:.0f} dB），麦克风工作正常；可以点「回放」确认。")
         else:
             self.mic_status.set(f"麦克风已打开，但几乎没有声音（{db:.0f} dB）。请靠近麦克风或检查系统输入音量。")
+
+    def _play_mic(self) -> None:
+        if self.test_audio is None:
+            return
+        try:
+            import sounddevice as sd
+
+            sd.stop()
+            sd.play(self.test_audio, TARGET_SR)
+            self.mic_status.set("正在回放刚才的录音…")
+        except Exception as exc:
+            self.mic_status.set(f"回放失败：{exc}")
 
     def _step_hotkey(self) -> None:
         self._title("设置快捷键", "按住说话、松开结束。推荐使用 F9 或右侧 Ctrl，避免与常用软件冲突。")
@@ -186,30 +240,67 @@ class Onboarding:
         tk.Label(row, text="按住说话", bg=_CARD, fg=_FG, width=10, anchor="w").pack(side="left")
         ttk.Entry(row, textvariable=self.hotkey_var, state="readonly", width=18).pack(side="left")
         ttk.Button(row, text="捕获按键", command=self._capture_hotkey).pack(side="left", padx=8)
-        tk.Label(card, text="提示：点「捕获按键」后直接按下你想要的键。", bg=_CARD, fg=_MUTED, anchor="w").pack(fill="x", pady=(14, 0))
+        self.hotkey_status = tk.StringVar(value="点「捕获按键」后直接按下你想要的键。")
+        tk.Label(card, textvariable=self.hotkey_status, bg=_CARD, fg=_MUTED, anchor="w", justify="left", wraplength=520).pack(fill="x", pady=(12, 8))
+
+        tk.Label(card, text="手势", bg=_CARD, fg=_FG, anchor="w", font=("Microsoft YaHei", 10, "bold")).pack(fill="x", pady=(8, 2))
+        self.hotkey_mode_var = tk.StringVar(value=str(self.cfg.get("hotkey", {}).get("mode", "hold")))
+        mode_row = tk.Frame(card, bg=_CARD)
+        mode_row.pack(fill="x")
+        for value, label, desc in (
+            ("hold", "按住说话", "按住时录音，松开结束；最接近对讲机。"),
+            ("toggle", "按一下开始/停止", "适合长口述或手不方便一直按住。"),
+        ):
+            block = tk.Frame(mode_row, bg=_CARD)
+            block.pack(side="left", fill="x", expand=True)
+            tk.Radiobutton(
+                block, text=label, variable=self.hotkey_mode_var, value=value,
+                bg=_CARD, fg=_FG, activebackground=_CARD, selectcolor=_CARD,
+                font=("Microsoft YaHei", 10, "bold"),
+            ).pack(anchor="w")
+            tk.Label(block, text=desc, bg=_CARD, fg=_MUTED, font=("Microsoft YaHei", 8)).pack(anchor="w", padx=(24, 0))
         self._nav(next_text="下一步")
 
     def _capture_hotkey(self) -> None:
         if self._busy:
             return
         self._busy = True
+        self.hotkey_status.set("请按下目标键…")
 
         def worker() -> None:
             name = None
+            error = ""
+            handler = None
             try:
                 import keyboard
 
                 name = keyboard.read_event(suppress=True).name
-            except Exception:
-                pass
-            self.root.after(0, lambda: self._hotkey_done(name))
+                # 尝试注册一次，检测是否被系统/其他程序占用
+                handler = keyboard.add_hotkey(name, lambda: None)
+            except Exception as exc:
+                error = str(exc)
+            finally:
+                if handler is not None:
+                    try:
+                        import keyboard
+
+                        keyboard.remove_hotkey(handler)
+                    except Exception:
+                        pass
+            self.root.after(0, lambda: self._hotkey_done(name, error))
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _hotkey_done(self, name: str | None) -> None:
+    def _hotkey_done(self, name: str | None, error: str = "") -> None:
         self._busy = False
-        if name:
-            self.hotkey_var.set(name)
+        if not name:
+            self.hotkey_status.set(f"没有捕获到按键：{error or '请重试'}")
+            return
+        self.hotkey_var.set(name)
+        if error:
+            self.hotkey_status.set(f"已捕获 {name.upper()}，但注册测试失败（可能被占用）：{error}")
+        else:
+            self.hotkey_status.set(f"已捕获 {name.upper()}，注册测试通过。")
 
     def _step_test(self) -> None:
         self._title("试一段语音", "录制 3 秒并调用本机模型识别。首次加载模型可能需要几秒。")
@@ -218,7 +309,10 @@ class Onboarding:
         tk.Label(card, textvariable=self.test_status, bg=_CARD, fg=_MUTED, anchor="w", justify="left", wraplength=520).pack(fill="x")
         self.test_text = tk.Text(card, height=5, wrap="word", bd=0, highlightthickness=1, highlightbackground="#e4e4e7", bg="#fbfbfc", fg=_FG, padx=10, pady=8, font=("Microsoft YaHei", 10))
         self.test_text.pack(fill="both", expand=True, pady=(10, 8))
-        ttk.Button(card, text="开始测试（3 秒）", command=self._run_test).pack(anchor="w")
+        bar = tk.Frame(card, bg=_CARD)
+        bar.pack(fill="x")
+        ttk.Button(bar, text="开始测试（3 秒）", command=self._run_test).pack(side="left")
+        ttk.Button(bar, text="测试上屏", command=self._test_insert).pack(side="left", padx=8)
         self._nav(next_text="下一步")
 
     def _run_test(self) -> None:
@@ -257,6 +351,25 @@ class Onboarding:
         self.test_text.insert("1.0", text or "（未识别到内容）")
         self.test_status.set("识别完成" if text else "未识别到内容，请检查麦克风或说话音量。")
 
+    def _test_insert(self) -> None:
+        try:
+            from .inject import type_unicode
+
+            self.test_text.delete("1.0", "end")
+            self.test_text.focus_set()
+            self.root.update_idletasks()
+            ok = type_unicode("上屏测试")
+            self.root.after(250, lambda: self._insert_done(ok))
+        except Exception as exc:
+            self.test_status.set(f"上屏测试失败：{exc}")
+
+    def _insert_done(self, ok: bool) -> None:
+        text = self.test_text.get("1.0", "end-1c").strip()
+        if ok and "上屏测试" in text:
+            self.test_status.set("上屏测试通过：文字已进入测试框。")
+        else:
+            self.test_status.set("上屏测试未通过；可稍后在设置 → 诊断 中检查插入方式。")
+
     def _step_mode(self) -> None:
         self._title("默认输入模式", "之后可以随时在托盘或设置中切换。")
         card = self._card()
@@ -276,6 +389,8 @@ class Onboarding:
         hot = self.cfg.setdefault("hotkey", {})
         if hasattr(self, "hotkey_var") and self.hotkey_var.get().strip():
             hot["key"] = self.hotkey_var.get().strip()
+        if hasattr(self, "hotkey_mode_var") and self.hotkey_mode_var.get().strip():
+            hot["mode"] = self.hotkey_mode_var.get().strip()
         if hasattr(self, "mic_var"):
             device = self._device_id()
             if device is not None:

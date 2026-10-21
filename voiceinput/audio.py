@@ -380,6 +380,10 @@ class Recorder:
     def native_sr(self) -> int:
         return self._capture.native_sr if self._capture else TARGET_SR
 
+    @property
+    def level_db(self) -> float:
+        return self._capture.level_db if self._capture else -100.0
+
     def start(self) -> None:
         self._capture = AudioCapture(self.device)
         self._capture.begin_collect()

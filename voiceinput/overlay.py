@@ -13,6 +13,8 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Any, Callable
 
+from . import drafts
+
 log = logging.getLogger("voiceinput.ui")
 
 GWL_EXSTYLE = -20
@@ -366,6 +368,7 @@ class ReviewWindow:
         self.text = ""
         self.original = ""
         self._dirty = False
+        self.refining = False
         self.compare: CompareWindow | None = None
 
     def _ensure(self) -> tk.Toplevel:
@@ -390,12 +393,13 @@ class ReviewWindow:
 
         toolbar = tk.Frame(win, bg=c["bg"], padx=16, pady=0)
         toolbar.pack(fill="x")
-        tk.Button(
+        self.refine_btn = tk.Button(
             toolbar, text="精修全文", bg=c["btn"], fg=c["fg"], activebackground=c["btn_hover"],
             activeforeground=c["fg"], relief="flat", bd=0, padx=12, pady=5,
             cursor="hand2", takefocus=0, font=("Microsoft YaHei", 9),
             command=lambda: self.on_command("review_refine_all", None),
-        ).pack(side="left", padx=(0, 8))
+        )
+        self.refine_btn.pack(side="left", padx=(0, 8))
         tk.Button(
             toolbar, text="对比原文", bg=c["bg"], fg=c["muted"], activebackground=c["bg"],
             activeforeground=c["fg"], relief="flat", bd=0, padx=8, pady=5,
@@ -419,6 +423,11 @@ class ReviewWindow:
         self.editor.tag_configure("base", foreground=c["fg"])
         self.editor.pack(fill="both", expand=True)
         self.editor.bind("<KeyRelease>", self._on_edit)
+        win.bind("<Control-Return>", lambda _e: self._shortcut("review_insert"))
+        win.bind("<Control-Shift-C>", lambda _e: self._shortcut("review_copy_close"))
+        win.bind("<Control-r>", lambda _e: self._shortcut("review_refine_all"))
+        win.bind("<Control-d>", self._shortcut_compare)
+        win.bind("<Escape>", lambda _e: self.hide())
 
         bottom = tk.Frame(win, bg=c["bg"], padx=16, pady=10)
         bottom.pack(side="bottom", fill="x")
@@ -428,7 +437,7 @@ class ReviewWindow:
             padx=14, pady=7, cursor="hand2", takefocus=0, font=("Microsoft YaHei", 9),
             command=lambda: self.on_command("review_insert", None),
         ).pack(side="left", padx=(0, 8))
-        for label, action in (("复制", "review_copy"), ("关闭", "review_close")):
+        for label, action in (("复制", "review_copy"), ("复制并关闭", "review_copy_close"), ("关闭", "review_close")):
             tk.Button(
                 bottom, text=label, bg=c["btn"], fg=c["fg"], activebackground=c["btn_hover"],
                 activeforeground=c["fg"], relief="flat", bd=0, padx=14, pady=7,
@@ -447,11 +456,14 @@ class ReviewWindow:
         self.text = (text or "").strip()
         self.original = (original or "").strip()
         self._dirty = False
+        self.refining = False
         win = self._ensure()
+        self.set_refining(False)
         self.model_label.configure(text=model_status)
-        self.status.configure(text=status or "可直接编辑、精修全文、对比原文或复制")
+        self.status.configure(text=status or "Ctrl+Enter 插入 · Ctrl+Shift+C 复制并关闭 · Esc 关闭")
         self._set_editor(self.text)
         self.info.configure(text=f"{len(self.text)} 字")
+        drafts.save(self.text, self.original)
         win.deiconify()
         win.lift()
         try:
@@ -499,7 +511,16 @@ class ReviewWindow:
         self._dirty = True
         self.text = self.get_text()
         self.info.configure(text=f"{len(self.text)} 字")
-        self.status.configure(text="已手动修改；插入/复制以此为准")
+        self.status.configure(text="Ctrl+Enter 插入 · Ctrl+Shift+C 复制并关闭 · Ctrl+R 精修 · Ctrl+D 对比 · Esc 关闭")
+        drafts.save(self.text, self.original)
+
+    def _shortcut(self, action: str):
+        self.on_command(action, None)
+        return "break"
+
+    def _shortcut_compare(self, _event=None):
+        self._open_compare()
+        return "break"
 
     def _restore_original(self) -> None:
         self._set_editor(self.original)
@@ -507,6 +528,7 @@ class ReviewWindow:
         self.text = self.original
         self.info.configure(text=f"{len(self.text)} 字")
         self.status.configure(text="已恢复原文；可继续编辑或复制")
+        drafts.save(self.text, self.original)
 
     def _open_compare(self) -> None:
         if self.compare is None:
@@ -544,6 +566,16 @@ class ReviewWindow:
             self.status.configure(text=text)
             if model_status is not None:
                 self.model_label.configure(text=model_status)
+
+    def set_refining(self, refining: bool) -> None:
+        self.refining = bool(refining)
+        try:
+            self.refine_btn.configure(
+                text="精修中…" if refining else "精修全文",
+                state="disabled" if refining else "normal",
+            )
+        except Exception:
+            pass
 
     def refresh(self) -> None:
         if self.visible:

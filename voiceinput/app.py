@@ -19,7 +19,7 @@ from typing import Any, Optional
 
 import keyboard
 
-from . import clipboard, modelstore, paths
+from . import clipboard, drafts, modelstore, paths
 from . import update as update_mod
 from .asr_merge import merge_stream_review
 from .audio import TARGET_SR, AudioCapture
@@ -120,6 +120,10 @@ class VoiceInputApp:
         self._last_voice_at = 0.0
         self._hide_after_id = None
         self._update_busy = False
+        self._models_ready = False
+        self._model_loading_started = time.time()
+        self._model_loading_text = "正在准备模型…"
+        self._ready_notified = False
 
     # ------------------------------------------------------------------ #
     # 生命周期
@@ -273,7 +277,8 @@ class VoiceInputApp:
     # 模型加载
     # ------------------------------------------------------------------ #
     def _load_models(self) -> None:
-        self._post("status", state="loading", text="正在加载语音识别模型…")
+        self._model_loading_started = time.time()
+        self._post_models_progress("正在加载流式模型…（约 8 秒）")
         model_set = modelstore.model_set_status()
         log.info("模型集：%s（需要 %s，来源 %s）", model_set.actual or "无", model_set.required, model_set.source)
         if not model_set.compatible:
@@ -282,7 +287,7 @@ class VoiceInputApp:
             return
         try:
             self.streaming = StreamingAsr(self.cfg)
-            self._post("status", state="loading", text="流式模型就绪，正在加载复核模型…")
+            self._post_models_progress(f"流式模型就绪（{time.time() - self._model_loading_started:.1f}s），加载复核模型…")
         except Exception as exc:
             log.exception("流式模型加载失败")
             self._model_errors.append(str(exc))
@@ -292,6 +297,7 @@ class VoiceInputApp:
         try:
             self.reviewer = OfflineReviewer(self.cfg)
             self._review_state = "ready"
+            self._post_models_progress("复核模型就绪，正在预热本地 LLM…")
         except Exception as exc:
             log.warning("复核模型不可用：%s", exc)
             self._review_state = "error"
@@ -304,12 +310,31 @@ class VoiceInputApp:
                 self.llm_server.preload()
                 self._llm_state = "ready" if self.llm_server.running else "error"
                 self._post("llm_status", text="LLM 就绪" if self._llm_state == "ready" else "LLM 不可用")
+                self._post_models_progress("全部就绪，可以按热键说话")
             else:
                 self._llm_state = "missing"
                 self._post("llm_status", text="未找到本地 LLM 模型")
+                self._post_models_progress("语音识别就绪；LLM 不可用，将使用确定性整理")
 
         if not self.storage.onboarded and not self.skip_onboarding and not self.feed_wav:
             self._post("onboarding")
+
+    def _post_models_progress(self, text: str) -> None:
+        self._model_loading_text = text
+        self._post("models_progress", text=text)
+
+    def _on_models_progress(self, text: str) -> None:
+        if not text:
+            return
+        self._model_loading_text = text
+        self._models_ready = self.streaming is not None and self._review_state in ("ready", "error")
+        if self.overlay and not self.overlay._visible:
+            self.overlay.set_state("loading", status=text, hint="就绪后按热键说话", mode=self._mode_text())
+        if self.tray:
+            try:
+                self.tray.set_status("loading", f"本地语音输入 - {text}")
+            except Exception:
+                pass
 
     def _post(self, kind: str, **data) -> None:
         self.events.put({"type": kind, **data})
@@ -380,6 +405,8 @@ class VoiceInputApp:
             self._set_status(event.get("text", ""), event.get("state"))
         elif kind == "models_ready":
             self._on_models_ready()
+        elif kind == "models_progress":
+            self._on_models_progress(event.get("text", ""))
         elif kind == "fatal_model":
             self._set_status(event.get("text", "模型不可用"), "error", error=True)
         elif kind == "llm_status":
@@ -391,10 +418,12 @@ class VoiceInputApp:
                 self.review_ui.refresh()
         elif kind == "review_refined_all":
             if self.review_ui:
+                self.review_ui.set_refining(False)
                 self.review_ui.update_texts(event.get("text", ""), event.get("original", ""), force=True)
                 self.review_ui.set_status("已精修全文；可继续编辑或复制")
         elif kind == "review_refine_failed":
             if self.review_ui:
+                self.review_ui.set_refining(False)
                 self.review_ui.set_status(str(event.get("message", "精修失败，已保留原文")))
         elif kind == "review_committed":
             self._on_review_committed(event.get("text", ""))
@@ -428,6 +457,7 @@ class VoiceInputApp:
 
     def _on_models_ready(self) -> None:
         errors = self._model_errors
+        self._models_ready = not errors
         if errors:
             log.error("模型/热键问题：%s", errors[0])
         if self.tray:
@@ -443,6 +473,12 @@ class VoiceInputApp:
                 )
             except Exception:
                 pass
+        if self.overlay and not errors:
+            self.overlay.set_state("idle", status="模型就绪", hint=self._hint(), mode=self._mode_text())
+        if self.tray and not errors and not self._ready_notified:
+            self._ready_notified = True
+            key = self._ptt.key.upper() if self._ptt else "F9"
+            self.tray.notify(f"{self._hint() or f'按 {key} 开始'}，说完即可上屏。", "语音输入已就绪")
         if errors and self.overlay:
             self.overlay.show("error")
             self.overlay.set_state("error", status=errors[0], hint="请打开设置查看诊断", mode=self._mode_text())
@@ -452,6 +488,34 @@ class VoiceInputApp:
             self.root.after(delay, lambda: self.start_session("wav"))  # type: ignore[union-attr]
         if (self.cfg.get("update", {}) or {}).get("auto_check") and not self.feed_wav:
             self.root.after(3000, lambda: self._check_updates(silent=True))  # type: ignore[union-attr]
+        if not self.feed_wav and not errors:
+            self.root.after(2500, self._offer_draft)  # type: ignore[union-attr]
+
+    def _offer_draft(self) -> None:
+        if not self.storage.onboarded:
+            return
+        data = drafts.load()
+        if not data:
+            return
+        age = time.time() - float(data.get("saved_at", 0) or 0)
+        if age > 72 * 3600:
+            drafts.clear()
+            return
+        text = str(data.get("text", "")).strip()
+        if not text:
+            drafts.clear()
+            return
+        when = time.strftime("%m-%d %H:%M", time.localtime(float(data.get("saved_at", 0) or time.time())))
+        if messagebox.askyesno(
+            "恢复上次草稿",
+            f"发现 {when} 未完成的整理结果（{len(text)} 字）。\n\n是否复制到剪贴板？",
+        ):
+            clipboard.set_text(text)
+            if self.overlay:
+                self.overlay.show("done")
+                self.overlay.set_state("done", status="草稿已复制到剪贴板", hint="可直接粘贴", mode=self._mode_text())
+                self.root.after(1800, self.overlay.hide)  # type: ignore[union-attr]
+        drafts.clear()
 
     def _hint(self) -> str:
         if not self._ptt:
@@ -482,7 +546,11 @@ class VoiceInputApp:
             return
         if self.streaming is None:
             self._beep("error")
-            msg = self._model_errors[0] if self._model_errors else "模型尚未加载完成，请稍候"
+            elapsed = max(0.0, time.time() - self._model_loading_started)
+            remaining = max(1, int(round(18 - elapsed)))
+            msg = self._model_errors[0] if self._model_errors else (
+                f"模型仍在加载：{self._model_loading_text}（约还需 {remaining} 秒）"
+            )
             self._set_status(msg, "error", error=True)
             if self.overlay:
                 self.root.after(2500, self.overlay.hide)  # type: ignore[union-attr]
@@ -961,6 +1029,7 @@ class VoiceInputApp:
     # ------------------------------------------------------------------ #
     def _on_review_committed(self, text: str) -> None:
         session = self.session
+        drafts.clear()
         if self.review_ui:
             self.review_ui.hide()
         if self.overlay:
@@ -1010,6 +1079,13 @@ class VoiceInputApp:
             self.commit_review()
         elif action == "review_copy":
             self._copy_review()
+        elif action == "review_copy_close":
+            self._copy_review()
+            drafts.clear()
+            if self.review_ui:
+                self.review_ui.hide()
+            if self.state == "review" and self.session:
+                self._end_session(self.session, cancelled=True)
         elif action == "review_close":
             if self.review_ui:
                 self.review_ui.hide()
@@ -1217,6 +1293,8 @@ class VoiceInputApp:
         session = self.session
         if session is None or not self.review_ui:
             return
+        if self.review_ui.refining:
+            return
         text = self.review_ui.get_text().strip()
         if not text:
             self.review_ui.set_status("没有可精修的文字")
@@ -1225,6 +1303,7 @@ class VoiceInputApp:
             self.review_ui.set_status("本地 LLM 不可用，已保留原文")
             return
         original = compose_text(self._review_segments(session), original=True)
+        self.review_ui.set_refining(True)
         self.review_ui.set_status("正在精修全文…")
         thread = threading.Thread(
             target=self._refine_all_worker,

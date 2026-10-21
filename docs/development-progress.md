@@ -55,7 +55,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1
 
 | 项 | 结果 | 证据 |
 |---|---|---|
-| 单元测试 | 69 passed | 终端输出；`docs/test-report.md` |
+| 单元测试 | 71 passed | 终端输出；`docs/test-report.md` |
 | UI 冒烟（Tk） | 3 passed | `tests/test_ui_smoke.py` |
 | 真实模型集成 | 2 passed / 24.3 s | `tests/test_integration_real.py` |
 | 流式 ASR | RTF P50 0.15；首字 P50 968 ms | `docs/perf-results.json` |
@@ -79,8 +79,8 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1
 
 | 文件 | 大小 | SHA-256 |
 |---|---:|---|
-| `release/LocalVoiceInput-Setup-x64.exe` | 1546.5 MB | `172efa2524e0f56c2fba02295b52ed4d7db8cafbf16d042590831067215136b4` |
-| `release/LocalVoiceInput-Update-x64.exe` | 42.8 MB | `7f88fa73148caad25cb5b39c9034f7c033ba637ceeffd4de770f26ecb5022cdc` |
+| `release/LocalVoiceInput-Setup-x64.exe` | 1546.5 MB | `9710ca3822733ef254a88da3644d21815c3e4cd7a7c515f36b9610ea505ff9af` |
+| `release/LocalVoiceInput-Update-x64.exe` | 42.8 MB | `4b1c3e35c3ccb1a215b861c779e93d0bb9cf35e219e2f812c6baa29d00fb82a7` |
 | `release/SHA256SUMS.txt` | — | 上述 + ReleaseNotes |
 
 ## 6. 未解决 / 未验证
